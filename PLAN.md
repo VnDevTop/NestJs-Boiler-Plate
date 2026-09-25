@@ -215,15 +215,15 @@ Add the minimal application-level foundation used by every project.
 
 Tasks:
 
-- [ ] Define app config
-- [ ] Define JWT config placeholder
-- [ ] Organize existing database config
-- [ ] Add global validation pipe
-- [ ] Add global exception filter
-- [ ] Add global response transform interceptor
-- [ ] Add common metadata constants
-- [ ] Add base response DTO/interface
-- [ ] Add request context interface
+- [x] Define app config
+- [x] Define JWT config placeholder
+- [x] Organize existing database config
+- [x] Add global validation pipe
+- [x] Add global exception filter
+- [x] Add global response transform interceptor
+- [x] Add common metadata constants
+- [x] Add base response DTO/interface
+- [x] Add request context interface
 
 Expected outcome:
 
