@@ -9,7 +9,7 @@ export class PaginationQueryDto {
   @IsInt()
   @Min(1)
   page = DEFAULT_PAGE;
-  
+
   @IsOptional()
   @Transform(({ value }) => Number(value))
   @IsInt()

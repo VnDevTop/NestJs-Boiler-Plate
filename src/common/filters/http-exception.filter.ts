@@ -21,12 +21,12 @@ export class HttpExceptionFilter implements ExceptionFilter<HttpException> {
     const context = host.switchToHttp();
     const response = context.getResponse<Response>();
     const request = context.getRequest<Request>();
-    
+
     const statusCode = exception.getStatus();
     const exceptionResponse = exception.getResponse();
-    
+
     const body = this.normalizeExceptionResponse(exceptionResponse, statusCode);
-    
+
     const errorResponse: ApiErrorResponse = {
       success: false,
       statusCode,
@@ -35,10 +35,10 @@ export class HttpExceptionFilter implements ExceptionFilter<HttpException> {
       path: request.originalUrl,
       timestamp: new Date().toISOString(),
     };
-    
+
     response.status(statusCode).json(errorResponse);
   }
-  
+
   private normalizeExceptionResponse(
     exceptionResponse: string | object,
     statusCode: number,
@@ -49,7 +49,7 @@ export class HttpExceptionFilter implements ExceptionFilter<HttpException> {
         statusCode,
       };
     }
-    
+
     return exceptionResponse as HttpExceptionResponseBody;
   }
 }

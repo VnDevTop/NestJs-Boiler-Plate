@@ -250,19 +250,19 @@ Create the user domain foundation.
 
 Tasks:
 
-- [ ] Create `users.module.ts`
-- [ ] Create `users.controller.ts`
-- [ ] Create `users.service.ts`
-- [ ] Create `user.entity.ts`
-- [ ] Create create/update user DTOs
-- [ ] Add basic user response DTO
-- [ ] Add `Role` enum
-- [ ] Add `isActive`
-- [ ] Add `isManager`
-- [ ] Add timestamps
-- [ ] Add soft delete column if needed
-- [ ] Add methods to find user by id/email
-- [ ] Add basic user profile route
+- [x] Create `users.module.ts`
+- [x] Create `users.controller.ts`
+- [x] Create `users.service.ts`
+- [x] Create `user.entity.ts`
+- [x] Create create/update user DTOs
+- [x] Add basic user response DTO
+- [x] Add `Role` enum
+- [x] Add `isActive`
+- [x] Add `isManager`
+- [x] Add timestamps
+- [x] Add soft delete column if needed
+- [x] Add methods to find user by id/email
+- [x] Add basic user profile route
 
 Expected initial user fields:
 ```text
