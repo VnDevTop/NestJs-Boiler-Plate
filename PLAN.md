@@ -279,7 +279,7 @@ feat: add users module foundation
 
 ## Phase 3: Auth Module - Basic JWT
 
-Status: In Progress
+Status: Done
 
 Goal:
 
@@ -319,7 +319,7 @@ feat: add basic jwt authentication
 
 ## Phase 4: Authorization - RBAC and Manager Scope
 
-Status: Pending
+Status: In Progress
 
 Goal:
 
@@ -327,15 +327,14 @@ Add authorization capabilities for role-based access and manager-only access.
 
 Tasks:
 
-- [ ] Add metadata constants
-- [ ] Add `@Roles()` decorator
-- [ ] Add `RolesGuard`
-- [ ] Add `@ManagerOnly()` decorator
-- [ ] Add `ManagerGuard`
-- [ ] Protect manager/admin routes
-- [ ] Ensure only users with `isManager = true` can access `/admin` routes
-- [ ] Prepare `@Permissions()` decorator placeholder for future permission system
-
+- [x] Add metadata constants
+- [x] Add `@Roles()` decorator
+- [x] Add `RolesGuard`
+- [x] Add `@ManagerOnly()` decorator
+- [x] Add `ManagerGuard`
+- [x] Protect manager/admin routes
+- [x] Ensure only users with `isManager = true` can access `/admin` routes
+- [x] Prepare `@Permissions()` decorator placeholder for future permission system
 Expected authorization decorators:
 ```text
 @Public() 
@@ -588,8 +587,8 @@ Before starting a phase:
 | Phase 0 | Project Architecture Skeleton | Done |
 | Phase 1 | Base Application Foundation | Done |
 | Phase 2 | Users Module | Done |
-| Phase 3 | Auth Module - Basic JWT | In Progress |
-| Phase 4 | Authorization - RBAC and Manager Scope | Pending |
+| Phase 3 | Auth Module - Basic JWT | Done |
+| Phase 4 | Authorization - RBAC and Manager Scope | In Progress |
 | Phase 5 | Admin Module Foundation | Pending |
 | Phase 6 | API Documentation | Pending |
 | Phase 7 | Refresh Tokens | Pending |
@@ -597,4 +596,3 @@ Before starting a phase:
 | Phase 9 | Two-Factor Authentication | Pending |
 | Phase 10 | Cache and Performance | Pending |
 | Phase 11 | Production Hardening | Pending |
-

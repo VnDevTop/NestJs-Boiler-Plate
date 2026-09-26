@@ -10,7 +10,7 @@ interface RequestWithUser extends Request {
 export const CurrentUser = createParamDecorator(
   (_data: unknown, context: ExecutionContext): RequestUser | undefined => {
     const request = context.switchToHttp().getRequest<RequestWithUser>();
-    
+
     return request.user;
   },
 );

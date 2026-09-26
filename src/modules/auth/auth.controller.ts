@@ -10,19 +10,19 @@ import { UserResponseDto } from '../users/dto/index.js';
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
-  
+
   @Public()
   @Post('register')
   register(@Body() registerDto: RegisterDto): Promise<AuthToken> {
     return this.authService.register(registerDto);
   }
-  
+
   @Public()
   @Post('login')
   login(@Body() loginDto: LoginDto): Promise<AuthToken> {
     return this.authService.login(loginDto);
   }
-  
+
   @Get('me')
   me(@CurrentUser() currentUser: RequestUser): Promise<UserResponseDto> {
     return this.authService.getMe(currentUser);
