@@ -8,6 +8,8 @@ import {
 } from './common/filters/index.js';
 import { ResponseTransformInterceptor } from './common/interceptors/index.js';
 import { createGlobalValidationPipe } from './common/pipes/index.js';
+import { setupSwagger } from './core/index.js';
+
 import { AppModule, ObserveInstrument } from './app.module.js';
 
 async function bootstrap() {
@@ -36,6 +38,8 @@ async function bootstrap() {
   app.useGlobalPipes(createGlobalValidationPipe());
   app.useGlobalFilters(new AllExceptionsFilter(), new HttpExceptionFilter());
   app.useGlobalInterceptors(new ResponseTransformInterceptor());
+
+  setupSwagger(app);
 
   await app.listen(port);
 }

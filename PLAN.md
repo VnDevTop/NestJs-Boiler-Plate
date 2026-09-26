@@ -364,7 +364,7 @@ feat: add rbac and manager authorization foundation
 
 ## Phase 5: Admin Module Foundation
 
-Status: In Progress
+Status: Done
 
 Goal:
 
@@ -394,7 +394,7 @@ feat: add admin module foundation
 
 ## Phase 6: API Documentation
 
-Status: Pending
+Status: In Progress
 
 Goal:
 
@@ -402,11 +402,11 @@ Add Swagger API documentation.
 
 Tasks:
 
-- [ ] Add Swagger config
-- [ ] Add Swagger setup in `core/swagger`
-- [ ] Add auth bearer documentation
-- [ ] Add tags for Auth, Users, Admin
-- [ ] Expose docs route
+- [x] Add Swagger config
+- [x] Add Swagger setup in `core/swagger`
+- [x] Add auth bearer documentation
+- [x] Add tags for Auth, Users, Admin
+- [x] Expose docs route
 
 Expected route:
 ```text
@@ -589,8 +589,8 @@ Before starting a phase:
 | Phase 2 | Users Module | Done |
 | Phase 3 | Auth Module - Basic JWT | Done |
 | Phase 4 | Authorization - RBAC and Manager Scope | Done |
-| Phase 5 | Admin Module Foundation | In Progress |
-| Phase 6 | API Documentation | Pending |
+| Phase 5 | Admin Module Foundation | Done |
+| Phase 6 | API Documentation | In Progress |
 | Phase 7 | Refresh Tokens | Pending |
 | Phase 8 | Device Authentication | Pending |
 | Phase 9 | Two-Factor Authentication | Pending |

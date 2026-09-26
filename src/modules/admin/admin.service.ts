@@ -1,18 +1,21 @@
 import { Injectable } from '@nestjs/common';
 
-import { AdminDashboard, AdminHealth } from './interfaces/index.js';
+import {
+  AdminDashboardResponseDto,
+  AdminHealthResponseDto,
+} from './dto/index.js';
 
 @Injectable()
 export class AdminService {
-  getHealth(): AdminHealth {
+  getHealth(): AdminHealthResponseDto {
     return {
       status: 'ok',
       scope: 'admin',
       timestamp: new Date().toISOString(),
     };
   }
-  
-  getDashboard(): AdminDashboard {
+
+  getDashboard(): AdminDashboardResponseDto {
     return {
       message: 'Admin dashboard',
       scope: 'admin',

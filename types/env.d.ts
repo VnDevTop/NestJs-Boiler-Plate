@@ -25,5 +25,11 @@ declare namespace NodeJS {
     JWT_EXPIRES_IN: number | StringValue;
     JWT_REFRESH_SECRET: string;
     JWT_REFRESH_EXPIRES_IN: number | StringValue;
+    
+    SWAGGER_ENABLED?: 'true' | 'false';
+    SWAGGER_TITLE?: string;
+    SWAGGER_DESCRIPTION?: string;
+    SWAGGER_VERSION?: string;
+    SWAGGER_PATH?: string;
   }
 }

@@ -1,17 +1,67 @@
-import { Role } from '../../../common/enums/role.enum.js';
-import { User } from '../entities/user.entity.js';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+import { Role } from '../../../common/enums/index.js';
+import { User } from '../entities/index.js';
 
 export class UserResponseDto {
+  @ApiProperty({
+    example: '8d7d34d4-8a52-4a7f-a92e-2d6d3ef9e631',
+  })
   id!: string;
+
+  @ApiProperty({
+    example: 'john@example.com',
+  })
   email!: string;
+
+  @ApiPropertyOptional({
+    example: 'John',
+    nullable: true,
+  })
   firstName!: string | null;
+
+  @ApiPropertyOptional({
+    example: 'Doe',
+    nullable: true,
+  })
   lastName!: string | null;
+
+  @ApiProperty({
+    enum: Role,
+    example: Role.User,
+  })
   role!: Role;
+
+  @ApiProperty({
+    example: true,
+  })
   isActive!: boolean;
+
+  @ApiProperty({
+    example: false,
+  })
   isManager!: boolean;
+
+  @ApiPropertyOptional({
+    example: '2026-09-26T00:00:00.000Z',
+    nullable: true,
+  })
   lastLoginAt!: Date | null;
+
+  @ApiProperty({
+    example: '2026-09-26T00:00:00.000Z',
+  })
   createdAt!: Date;
+
+  @ApiProperty({
+    example: '2026-09-26T00:00:00.000Z',
+  })
   updatedAt!: Date;
+
+  @ApiPropertyOptional({
+    example: null,
+    nullable: true,
+  })
   deletedAt!: Date | null;
 
   constructor(user: User) {
