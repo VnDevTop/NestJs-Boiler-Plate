@@ -319,7 +319,7 @@ feat: add basic jwt authentication
 
 ## Phase 4: Authorization - RBAC and Manager Scope
 
-Status: In Progress
+Status: Done
 
 Goal:
 
@@ -364,7 +364,7 @@ feat: add rbac and manager authorization foundation
 
 ## Phase 5: Admin Module Foundation
 
-Status: Pending
+Status: In Progress
 
 Goal:
 
@@ -372,12 +372,12 @@ Create a clean admin route scope.
 
 Tasks:
 
-- [ ] Create `admin.module.ts`
-- [ ] Create `admin.controller.ts`
-- [ ] Create `admin.service.ts`
-- [ ] Prefix admin routes with `/admin`
-- [ ] Apply manager-only access
-- [ ] Add basic admin health/dashboard route
+- [x] Create `admin.module.ts`
+- [x] Create `admin.controller.ts`
+- [x] Create `admin.service.ts`
+- [x] Prefix admin routes with `/admin`
+- [x] Apply manager-only access
+- [x] Add basic admin health/dashboard route
 
 Expected routes:
 ```text
@@ -588,8 +588,8 @@ Before starting a phase:
 | Phase 1 | Base Application Foundation | Done |
 | Phase 2 | Users Module | Done |
 | Phase 3 | Auth Module - Basic JWT | Done |
-| Phase 4 | Authorization - RBAC and Manager Scope | In Progress |
-| Phase 5 | Admin Module Foundation | Pending |
+| Phase 4 | Authorization - RBAC and Manager Scope | Done |
+| Phase 5 | Admin Module Foundation | In Progress |
 | Phase 6 | API Documentation | Pending |
 | Phase 7 | Refresh Tokens | Pending |
 | Phase 8 | Device Authentication | Pending |
