@@ -22,8 +22,8 @@ declare namespace NodeJS {
     REDIS_PORT: string;
 
     JWT_SECRET: string;
-    JWT_EXPIRES_IN: string;
+    JWT_EXPIRES_IN: number | StringValue;
     JWT_REFRESH_SECRET: string;
-    JWT_REFRESH_EXPIRES_IN: string;
+    JWT_REFRESH_EXPIRES_IN: number | StringValue;
   }
 }

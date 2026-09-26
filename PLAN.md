@@ -207,7 +207,7 @@ chore: add initial scalable project structure
 
 ## Phase 1: Base Application Foundation
 
-Status: Pending
+Status: Done
 
 Goal:
 
@@ -242,7 +242,7 @@ feat: add base application foundation
 
 ## Phase 2: Users Module
 
-Status: Pending
+Status: Done
 
 Goal:
 
@@ -279,7 +279,7 @@ feat: add users module foundation
 
 ## Phase 3: Auth Module - Basic JWT
 
-Status: Pending
+Status: In Progress
 
 Goal:
 
@@ -287,21 +287,20 @@ Implement basic authentication using JWT access token.
 
 Tasks:
 
-- [ ] Create `auth.module.ts`
-- [ ] Create `auth.controller.ts`
-- [ ] Create `auth.service.ts`
-- [ ] Create login DTO
-- [ ] Create register DTO
-- [ ] Add password hashing utility/service
-- [ ] Add JWT payload interface
-- [ ] Add JWT strategy
-- [ ] Add JWT auth guard
-- [ ] Add `@Public()` decorator
-- [ ] Add `@CurrentUser()` decorator
-- [ ] Add `/auth/register`
-- [ ] Add `/auth/login`
-- [ ] Add `/auth/me`
-
+- [x] Create `auth.module.ts`
+- [x] Create `auth.controller.ts`
+- [x] Create `auth.service.ts`
+- [x] Create login DTO
+- [x] Create register DTO
+- [x] Add password hashing utility/service
+- [x] Add JWT payload interface
+- [x] Add JWT strategy
+- [x] Add JWT auth guard
+- [x] Add `@Public()` decorator
+- [x] Add `@CurrentUser()` decorator
+- [x] Add `/auth/register`
+- [x] Add `/auth/login`
+- [x] Add `/auth/me`
 Expected routes:
 ```text
 POST /auth/register 
@@ -586,10 +585,10 @@ Before starting a phase:
 
 | Phase | Name | Status |
 | --- | --- | --- |
-| Phase 0 | Project Architecture Skeleton | Pending |
-| Phase 1 | Base Application Foundation | Pending |
-| Phase 2 | Users Module | Pending |
-| Phase 3 | Auth Module - Basic JWT | Pending |
+| Phase 0 | Project Architecture Skeleton | Done |
+| Phase 1 | Base Application Foundation | Done |
+| Phase 2 | Users Module | Done |
+| Phase 3 | Auth Module - Basic JWT | In Progress |
 | Phase 4 | Authorization - RBAC and Manager Scope | Pending |
 | Phase 5 | Admin Module Foundation | Pending |
 | Phase 6 | API Documentation | Pending |
