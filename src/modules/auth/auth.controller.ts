@@ -1,23 +1,35 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   HttpCode,
   HttpStatus,
   Ip,
+  Param,
   Post,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiHeader,
   ApiNoContentResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 
-import { CurrentUser, Public } from '../../common/decorators/index.js';
+import {
+  DEVICE_NAME_HEADER,
+  DEVICE_NAME_MAX_LENGTH,
+} from '../../common/constants/index.js';
+import {
+  CurrentUser,
+  DeviceName,
+  Public,
+} from '../../common/decorators/index.js';
 import type { RequestUser } from '../../common/interfaces/index.js';
 import { UserResponseDto } from '../users/dto/index.js';
 import {
@@ -26,9 +38,19 @@ import {
   LogoutDto,
   RefreshTokenDto,
   RegisterDto,
+  UserDeviceDto,
 } from './dto/index.js';
 import { AuthService } from './auth.service.js';
-import { AuthToken, TokenMetadata } from './types/index.js';
+import { AuthToken, DeviceMetadata } from './types/index.js';
+
+const DEVICE_NAME_API_HEADER = {
+  name: DEVICE_NAME_HEADER,
+  required: false,
+  description:
+    'Friendly name for this device, shown in the device list. ' +
+    'Derived from the user agent when omitted.',
+  schema: { type: 'string', maxLength: DEVICE_NAME_MAX_LENGTH },
+};
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -39,14 +61,16 @@ export class AuthController {
   @Post('register')
   @ApiOperation({ summary: 'Register a new user' })
   @ApiOkResponse({ type: AuthTokenResponseDto })
+  @ApiHeader(DEVICE_NAME_API_HEADER)
   register(
     @Body() registerDto: RegisterDto,
+    @DeviceName() deviceName: string | null,
     @Ip() ipAddress: string,
     @Headers('user-agent') userAgent?: string,
   ): Promise<AuthToken> {
     return this.authService.register(
       registerDto,
-      this.getMetadata(ipAddress, userAgent),
+      this.getMetadata(deviceName, ipAddress, userAgent),
     );
   }
 
@@ -55,14 +79,16 @@ export class AuthController {
   @ApiOperation({ summary: 'Login with email and password' })
   @ApiOkResponse({ type: AuthTokenResponseDto })
   @ApiUnauthorizedResponse({ description: 'Invalid email or password' })
+  @ApiHeader(DEVICE_NAME_API_HEADER)
   login(
     @Body() loginDto: LoginDto,
+    @DeviceName() deviceName: string | null,
     @Ip() ipAddress: string,
     @Headers('user-agent') userAgent?: string,
   ): Promise<AuthToken> {
     return this.authService.login(
       loginDto,
-      this.getMetadata(ipAddress, userAgent),
+      this.getMetadata(deviceName, ipAddress, userAgent),
     );
   }
 
@@ -84,7 +110,7 @@ export class AuthController {
   ): Promise<AuthToken> {
     return this.authService.refresh(
       refreshTokenDto,
-      this.getMetadata(ipAddress, userAgent),
+      this.getMetadata(null, ipAddress, userAgent),
     );
   }
 
@@ -100,7 +126,9 @@ export class AuthController {
   @Post('logout-all')
   @ApiBearerAuth('access-token')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Revoke every refresh token of the current user' })
+  @ApiOperation({
+    summary: 'Revoke every refresh token and deactivate every device',
+  })
   @ApiNoContentResponse({ description: 'All sessions revoked successfully' })
   logoutAll(@CurrentUser() currentUser: RequestUser): Promise<void> {
     return this.authService.logoutAll(currentUser);
@@ -114,8 +142,36 @@ export class AuthController {
     return this.authService.getMe(currentUser);
   }
 
-  private getMetadata(ipAddress: string, userAgent?: string): TokenMetadata {
+  @Get('devices')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'List the active devices of the current user' })
+  @ApiOkResponse({ type: UserDeviceDto, isArray: true })
+  devices(@CurrentUser() currentUser: RequestUser): Promise<UserDeviceDto[]> {
+    return this.authService.listDevices(currentUser);
+  }
+
+  @Delete('devices/:id')
+  @ApiBearerAuth('access-token')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Revoke a device and every refresh token attached to it',
+  })
+  @ApiNoContentResponse({ description: 'Device revoked successfully' })
+  @ApiNotFoundResponse({ description: 'Device not found' })
+  revokeDevice(
+    @CurrentUser() currentUser: RequestUser,
+    @Param('id') deviceId: string,
+  ): Promise<void> {
+    return this.authService.revokeDevice(currentUser, deviceId);
+  }
+
+  private getMetadata(
+    deviceName: string | null,
+    ipAddress: string,
+    userAgent?: string,
+  ): DeviceMetadata {
     return {
+      deviceName,
       ipAddress: ipAddress ?? null,
       userAgent: userAgent ?? null,
     };

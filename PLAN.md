@@ -473,7 +473,7 @@ src/modules/auth/types/token-metadata.interface.ts
 
 ## Phase 8: Device Authentication
 
-Status: Pending
+Status: Done
 
 Goal:
 
@@ -481,11 +481,11 @@ Track authenticated devices.
 
 Tasks:
 
-- [ ] Add user device entity
-- [ ] Store device info during login
-- [ ] List devices
-- [ ] Revoke device
-- [ ] Attach refresh tokens to devices
+- [x] Add user device entity
+- [x] Store device info during login
+- [x] List devices
+- [x] Revoke device
+- [x] Attach refresh tokens to devices
 
 Expected routes:
 
@@ -495,9 +495,42 @@ DELETE /auth/devices/:id
 ```
 
 Expected commit:
+
 ```text
 feat: add device authentication foundation
 ```
+Expected commit:
+
+```text
+feat: add device authentication foundation
+```
+
+Implementation notes:
+
+```text
+src/modules/auth/entities/user-device.entity.ts
+src/modules/auth/device.service.ts
+src/modules/auth/dto/user-device.dto.ts
+src/modules/auth/types/device-metadata.interface.ts
+```
+
+- Devices are fingerprinted by user agent, so repeated logins from the same
+  browser or app reuse a single `user_devices` row instead of creating duplicates.
+  Logging in again from a revoked device reactivates it instead of failing.
+- Each `refresh_tokens` row carries a `deviceId`. Rotation keeps the token on its
+  original device, so a session can never hop between devices while refreshing.
+- `DELETE /auth/devices/:id` deactivates the device and revokes every refresh
+  token attached to it (`device_revoked`).
+- `logout-all` revokes all refresh tokens and deactivates all devices.
+- The friendly device name is derived from the `user-agent` header by the
+  `@DeviceName()` decorator, so clients never have to send anything. An explicit
+  `x-device-name` header overrides it when a caller wants something friendlier
+  than "Chrome on macOS". Both sources are untrusted, so the decorator trims the
+  value, collapses whitespace and caps it at the column width.
+- `parseUserAgent()` in `common/utils/user-agent.util.ts` is a dependency free
+  best effort parser. It recognises the common browsers, the common operating
+  systems, Android build models and API clients. Swap it for `ua-parser-js` if
+  exhaustive coverage matters more than staying dependency free.
 
 ---
 
@@ -611,7 +644,7 @@ Before starting a phase:
 | Phase 5 | Admin Module Foundation | Done |
 | Phase 6 | API Documentation | Done |
 | Phase 7 | Refresh Tokens | Done |
-| Phase 8 | Device Authentication | Pending |
+| Phase 8 | Device Authentication | Done |
 | Phase 9 | Two-Factor Authentication | Pending |
 | Phase 10 | Cache and Performance | Pending |
 | Phase 11 | Production Hardening | Pending |

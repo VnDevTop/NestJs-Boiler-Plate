@@ -45,6 +45,10 @@ export class RefreshToken {
   @Column({ type: 'uuid', nullable: true })
   replacedById!: string | null;
 
+  @Index()
+  @Column({ type: 'uuid', nullable: true })
+  deviceId!: string | null;
+
   @Column({ type: 'varchar', length: 100, nullable: true })
   ipAddress!: string | null;
 

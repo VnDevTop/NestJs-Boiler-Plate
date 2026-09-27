@@ -52,6 +52,7 @@ export class RefreshTokenService {
   async issue(
     userId: string,
     metadata: TokenMetadata,
+    deviceId: string | null = null,
     manager: EntityManager = this.store,
   ): Promise<IssuedRefreshToken> {
     const jti = randomUUID();
@@ -73,6 +74,7 @@ export class RefreshTokenService {
       revokedAt: null,
       revokedReason: null,
       replacedById: null,
+      deviceId,
       ipAddress: metadata.ipAddress,
       userAgent: metadata.userAgent,
     });
@@ -120,6 +122,20 @@ export class RefreshTokenService {
         replacedById,
       },
     );
+  }
+
+  async revokeAllByDeviceId(
+    deviceId: string,
+    reason: RefreshTokenRevokedReason,
+    manager: EntityManager = this.store,
+  ): Promise<number> {
+    const result = await manager.update(
+      RefreshToken,
+      { deviceId, revokedAt: IsNull() },
+      { revokedAt: new Date(), revokedReason: reason },
+    );
+
+    return result.affected ?? 0;
   }
 
   async revokeAllByUserId(

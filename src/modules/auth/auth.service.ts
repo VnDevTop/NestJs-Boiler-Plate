@@ -10,10 +10,12 @@ import {
   LogoutDto,
   RefreshTokenDto,
   RegisterDto,
+  UserDeviceDto,
 } from './dto/index.js';
 import { RefreshTokenRevokedReason } from './enums/index.js';
 import { RefreshTokenService } from './refresh-token.service.js';
-import { AuthToken, TokenMetadata } from './types/index.js';
+import { DeviceService } from './device.service.js';
+import { AuthToken, DeviceMetadata, TokenMetadata } from './types/index.js';
 
 type RotationResult =
   | { status: 'ok'; refreshToken: string }
@@ -27,11 +29,12 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly usersService: UsersService,
     private readonly refreshTokenService: RefreshTokenService,
+    private readonly deviceService: DeviceService,
   ) {}
 
   async register(
     registerDto: RegisterDto,
-    metadata: TokenMetadata,
+    metadata: DeviceMetadata,
   ): Promise<AuthToken> {
     const passwordHash = await hashPassword(registerDto.password);
 
@@ -42,12 +45,15 @@ export class AuthService {
       lastName: registerDto.lastName,
     });
 
-    const { token } = await this.refreshTokenService.issue(user.id, metadata);
+    const { token } = await this.issueSession(user.id, metadata);
 
     return this.createAuthToken(user, token);
   }
 
-  async login(loginDto: LoginDto, metadata: TokenMetadata): Promise<AuthToken> {
+  async login(
+    loginDto: LoginDto,
+    metadata: DeviceMetadata,
+  ): Promise<AuthToken> {
     const user = await this.usersService.findByEmail(loginDto.email);
 
     if (!user || !user.isActive) {
@@ -64,14 +70,14 @@ export class AuthService {
     }
 
     const userResponse = UserResponseDto.fromEntity(user);
-    const { token } = await this.refreshTokenService.issue(user.id, metadata);
+    const { token } = await this.issueSession(user.id, metadata);
 
     return this.createAuthToken(userResponse, token);
   }
 
   async refresh(
     refreshTokenDto: RefreshTokenDto,
-    metadata: TokenMetadata,
+    metadata: DeviceMetadata,
   ): Promise<AuthToken> {
     const payload = this.refreshTokenService.verify(
       refreshTokenDto.refreshToken,
@@ -118,20 +124,57 @@ export class AuthService {
       throw new UnauthorizedException('Authentication required');
     }
 
-    await this.refreshTokenService.revokeAllByUserId(
-      currentUser.id,
-      RefreshTokenRevokedReason.LogoutAll,
-    );
+    await this.refreshTokenService.runInTransaction(async (manager) => {
+      await this.refreshTokenService.revokeAllByUserId(
+        currentUser.id,
+        RefreshTokenRevokedReason.LogoutAll,
+        manager,
+      );
+
+      await this.deviceService.revokeAllByUserId(currentUser.id);
+    });
   }
 
   async getMe(currentUser: RequestUser): Promise<UserResponseDto> {
     return this.usersService.findProfileById(currentUser?.id);
   }
 
+  listDevices(currentUser: RequestUser): Promise<UserDeviceDto[]> {
+    return this.deviceService.listByUserId(currentUser.id);
+  }
+
+  async revokeDevice(
+    currentUser: RequestUser,
+    deviceId: string,
+  ): Promise<void> {
+    if (!currentUser?.id) {
+      throw new UnauthorizedException('Authentication required');
+    }
+
+    const device = await this.deviceService.revoke(currentUser.id, deviceId);
+
+    await this.refreshTokenService.revokeAllByDeviceId(
+      device.id,
+      RefreshTokenRevokedReason.DeviceRevoked,
+    );
+  }
+
+  private async issueSession(
+    userId: string,
+    metadata: DeviceMetadata,
+  ): Promise<{ token: string }> {
+    const device = await this.deviceService.register(userId, metadata);
+    const tokenMetadata = this.toTokenMetadata(metadata);
+
+    return this.refreshTokenService.issue(userId, tokenMetadata, device.id);
+  }
+
   private async rotate(
     jti: string,
-    metadata: TokenMetadata,
+    metadata: DeviceMetadata,
   ): Promise<RotationResult> {
+    const tokenMetadata = this.toTokenMetadata(metadata);
+
     return this.refreshTokenService.runInTransaction(async (manager) => {
       const current = await this.refreshTokenService.findByJti(
         jti,
@@ -156,6 +199,7 @@ export class AuthService {
           RefreshTokenRevokedReason.ReuseDetected,
           manager,
         );
+        await this.deviceService.revokeAllByUserId(current.userId);
 
         return { status: 'reused' };
       }
@@ -171,9 +215,12 @@ export class AuthService {
         return { status: 'expired' };
       }
 
+      // The rotated token stays on the same device, so a session never hops
+      // between devices on refresh.
       const { token, record } = await this.refreshTokenService.issue(
         current.userId,
-        metadata,
+        tokenMetadata,
+        current.deviceId,
         manager,
       );
 
@@ -186,6 +233,13 @@ export class AuthService {
 
       return { status: 'ok', refreshToken: token };
     });
+  }
+
+  private toTokenMetadata(metadata: DeviceMetadata): TokenMetadata {
+    return {
+      ipAddress: metadata.ipAddress,
+      userAgent: metadata.userAgent,
+    };
   }
 
   private async createAuthToken(
