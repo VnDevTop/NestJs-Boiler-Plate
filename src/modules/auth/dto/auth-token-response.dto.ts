@@ -9,9 +9,20 @@ export class AuthTokenResponseDto {
   accessToken!: string;
 
   @ApiProperty({
+    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+  })
+  refreshToken!: string;
+
+  @ApiProperty({
     example: 'Bearer',
   })
   tokenType!: 'Bearer';
+
+  @ApiProperty({
+    example: 900,
+    description: 'Access token lifetime in seconds',
+  })
+  expiresIn!: number;
 
   @ApiProperty({
     type: () => UserResponseDto,

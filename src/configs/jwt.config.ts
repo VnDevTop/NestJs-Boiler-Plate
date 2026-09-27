@@ -16,7 +16,7 @@ export const jwtRefreshTokenConfig = registerAs(
   (): JwtModuleOptions => ({
     secret: process.env.JWT_REFRESH_SECRET ?? 'change-me',
     signOptions: {
-      expiresIn: process.env.JWT_REFRESH_EXPIRES_IN,
+      expiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
     },
   }),
 );

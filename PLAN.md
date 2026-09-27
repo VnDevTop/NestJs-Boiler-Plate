@@ -394,7 +394,7 @@ feat: add admin module foundation
 
 ## Phase 6: API Documentation
 
-Status: In Progress
+Status: Done
 
 Goal:
 
@@ -422,7 +422,7 @@ feat: add swagger documentation foundation
 
 ## Phase 7: Refresh Tokens
 
-Status: Pending
+Status: Done
 
 Goal:
 
@@ -430,13 +430,13 @@ Add refresh token support.
 
 Tasks:
 
-- [ ] Add refresh token entity
-- [ ] Add refresh token DTO
-- [ ] Add refresh token rotation
-- [ ] Add logout
-- [ ] Add logout all devices
-- [ ] Store token metadata
-- [ ] Revoke old refresh tokens
+- [x] Add refresh token entity
+- [x] Add refresh token DTO
+- [x] Add refresh token rotation
+- [x] Add logout
+- [x] Add logout all devices
+- [x] Store token metadata
+- [x] Revoke old refresh tokens
 
 Expected routes:
 ```text
@@ -450,6 +450,25 @@ Expected commit:
 feat: add refresh token authentication
 ```
 
+Implementation notes:
+
+```text
+src/modules/auth/entities/refresh-token.entity.ts
+src/modules/auth/enums/refresh-token-revoked-reason.enum.ts
+src/modules/auth/refresh-token.service.ts
+src/modules/auth/dto/refresh-token.dto.ts
+src/modules/auth/dto/logout.dto.ts
+src/modules/auth/types/refresh-token-payload.interface.ts
+src/modules/auth/types/token-metadata.interface.ts
+```
+
+- Every login, register and refresh call stores one `refresh_tokens` row.
+- Rotation happens inside a database transaction with a pessimistic row lock, so
+  concurrent refreshes of the same token produce exactly one winner.
+- The rotated-out token keeps a `replacedById` pointer, which forms the rotation chain.
+- Replaying a token that was revoked by rotation is treated as theft: all sessions
+  of that user are revoked. Tokens revoked by an explicit logout are not a
+  compromise signal and do not trigger the sweep.
 ---
 
 ## Phase 8: Device Authentication
@@ -590,8 +609,8 @@ Before starting a phase:
 | Phase 3 | Auth Module - Basic JWT | Done |
 | Phase 4 | Authorization - RBAC and Manager Scope | Done |
 | Phase 5 | Admin Module Foundation | Done |
-| Phase 6 | API Documentation | In Progress |
-| Phase 7 | Refresh Tokens | Pending |
+| Phase 6 | API Documentation | Done |
+| Phase 7 | Refresh Tokens | Done |
 | Phase 8 | Device Authentication | Pending |
 | Phase 9 | Two-Factor Authentication | Pending |
 | Phase 10 | Cache and Performance | Pending |
