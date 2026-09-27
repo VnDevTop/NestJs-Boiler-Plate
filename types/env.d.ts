@@ -22,8 +22,12 @@ declare namespace NodeJS {
     TWO_FACTOR_ENCRYPTION_KEY: string;
     TWO_FACTOR_ISSUER?: string;
 
-    REDIS_HOST: string;
-    REDIS_PORT: string;
+    CACHE_BACKEND?: 'redis' | 'valkey' | 'memory';
+    CACHE_URL: string;
+    CACHE_KEY_PREFIX?: string;
+    CACHE_DEFAULT_TTL?: string;
+    CACHE_EMPTY_TTL?: string;
+    CACHE_CONNECT_TIMEOUT?: string;
 
     JWT_SECRET: string;
     JWT_EXPIRES_IN: number | StringValue;

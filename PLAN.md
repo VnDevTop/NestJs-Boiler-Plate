@@ -593,7 +593,7 @@ src/configs/two-factor.config.ts
 ---
 ## Phase 10: Cache and Performance
 
-Status: Pending
+Status: Done
 
 Goal:
 
@@ -601,16 +601,73 @@ Add Redis cache foundation.
 
 Tasks:
 
-- [ ] Add Redis config
-- [ ] Add cache module
-- [ ] Add cache service abstraction
-- [ ] Add cache key constants
-- [ ] Add cache decorators/helpers if needed
+- [x] Add Redis config
+- [x] Add cache module
+- [x] Add cache service abstraction
+- [x] Add cache key constants
+- [x] Add cache decorators/helpers if needed
 
 Expected commit:
 ```text
 feat: add redis cache foundation
 ```
+
+Implementation notes:
+
+```text
+src/configs/cache.config.ts
+src/core/cache/cache.module.ts
+src/core/cache/cache.service.ts
+src/core/cache/cache-keys.ts
+src/core/cache/cache.constants.ts
+src/core/cache/cache.service.spec.ts
+```
+
+- Uses `@nestjs/cache-manager` with Keyv, and `@keyv/redis` for Redis and
+  Valkey. Both talk the same protocol, so only `backend` differs between them.
+- `CACHE_URL` is the whole connection configuration, including credentials, TLS
+  and database, which is what the Redis client takes anyway.
+- Exactly one store. `CACHE_BACKEND=memory` is an explicit choice for local
+  development, never a silent fallback, so a configured but unreachable cache
+  fails the boot instead of quietly serving per-instance data.
+  The two store layout that `@nestjs/cache-manager` documents was rejected after
+  measurement: memory first means the shared store is written but never read,
+  and Redis first with a memory fallback resurrects values that were just
+  deleted, because the delete only reached the shared store.
+- An unreachable cache fails the boot, through a `store.get('__startup__')` probe
+  with `throwOnErrors` on, since a Keyv store connects lazily and the app would
+  otherwise start and fail on the first request. Errors are switched off after
+  the probe so a later outage is a miss rather than a 500.
+- `CacheService.wrap()` is the miss handler and the failover back to the
+  database. It delegates to cache-manager, which already supplies request
+  coalescing and stale while revalidate, so neither is reimplemented here.
+  Measured on Valkey: 300 concurrent requests on one hot key cause 1 loader call;
+  a read inside the refresh threshold returns in 80ms while the loader takes
+  200ms, and the refreshed value appears afterwards.
+- Nullish results are cached for `CACHE_EMPTY_TTL` rather than the full TTL, so
+  repeated lookups of something missing stop hammering the loader while a record
+  created afterwards still appears quickly. This does not help a client
+  enumerating many different missing ids, since each is a separate key; rate
+  limiting in Phase 11 is the tool for that.
+- Expirations carry a 10% jitter, so a bulk write does not put every entry on
+  the same deadline and expire them in one burst.
+- `disableOfflineQueue` is set on the client, so a command issued while the
+  socket is reconnecting reports a miss instead of waiting for the outage to end.
+  It does not remove the cost of a dead cache: the store re-attempts the
+  connection on every operation, and each attempt waits out
+  `CACHE_CONNECT_TIMEOUT`. Measured against an unreachable cache with the
+  default 2000ms, one request costs 4003ms, because the read misses and the
+  write back fails. Concurrent requests for the same key still share a single
+  loader run, so the outage costs latency rather than correctness, and
+  `CACHE_CONNECT_TIMEOUT` is the knob for that latency.
+- Invalidation is by explicit key only. There is no `deleteByPattern` and no
+  decorator based invalidation, because scanning a keyspace is unbounded on a
+  shared server and a broad pattern fails silently.
+- There is no `isHealthy()`. cache-manager reports a failing store as a miss, so
+  a check built on it would always report healthy. The health endpoint is
+  Phase 11, where it can ping the server directly.
+- Authentication state is not cached, so a role change or a deactivation takes
+  effect on the next request instead of after a TTL.
 
 ---
 
@@ -673,5 +730,5 @@ Before starting a phase:
 | Phase 7 | Refresh Tokens | Done |
 | Phase 8 | Device Authentication | Done |
 | Phase 9 | Two-Factor Authentication | Done |
-| Phase 10 | Cache and Performance | Pending |
+| Phase 10 | Cache and Performance | Done |
 | Phase 11 | Production Hardening | Pending |

@@ -5,6 +5,7 @@ import { createObserveModule } from '@nestjs/observe';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
   appConfig,
+  cacheConfig,
   databaseConfig,
   jwtAccessTokenConfig,
   jwtRefreshTokenConfig,
@@ -19,6 +20,7 @@ import {
   PermissionsGuard,
   RolesGuard,
 } from './common/guards/index.js';
+import { CacheModule } from './core/cache/index.js';
 import { AppService } from './app.service.js';
 import { AppController } from './app.controller.js';
 
@@ -31,6 +33,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
       cache: true,
       load: [
         appConfig,
+        cacheConfig,
         jwtAccessTokenConfig,
         jwtRefreshTokenConfig,
         databaseConfig,
@@ -49,6 +52,8 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
         !!env['OBSERVE_SERVICE_ID'],
     ),
     TypeOrmModule.forRootAsync(databaseConfig.asProvider()),
+
+    CacheModule,
 
     UsersModule,
     AuthModule,
