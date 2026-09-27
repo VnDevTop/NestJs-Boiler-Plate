@@ -18,6 +18,10 @@ declare namespace NodeJS {
     // DATABASE_PASSWORD: string;
     DATABASE_URL: string;
 
+    TWO_FACTOR_ENABLED?: 'true' | 'false';
+    TWO_FACTOR_ENCRYPTION_KEY: string;
+    TWO_FACTOR_ISSUER?: string;
+
     REDIS_HOST: string;
     REDIS_PORT: string;
 

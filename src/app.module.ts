@@ -10,6 +10,7 @@ import {
   jwtRefreshTokenConfig,
   observeConfig,
   swaggerConfig,
+  twoFactorConfig,
 } from './configs/index.js';
 import { AdminModule, AuthModule, UsersModule } from './modules/index.js';
 import {
@@ -35,6 +36,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
         databaseConfig,
         observeConfig,
         swaggerConfig,
+        twoFactorConfig,
       ],
     }),
     // Distributed tracing, auto-correlated logs, request/job metrics, error

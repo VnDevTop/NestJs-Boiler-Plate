@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiExtraModels,
   ApiHeader,
   ApiNoContentResponse,
   ApiNotFoundResponse,
@@ -19,6 +20,7 @@ import {
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
+  getSchemaPath,
 } from '@nestjs/swagger';
 
 import {
@@ -38,9 +40,14 @@ import {
   LogoutDto,
   RefreshTokenDto,
   RegisterDto,
+  TwoFactorChallengeResponseDto,
+  TwoFactorCodeDto,
+  TwoFactorEnabledResponseDto,
+  TwoFactorLoginDto,
+  TwoFactorSetupResponseDto,
   UserDeviceDto,
 } from './dto/index.js';
-import { AuthService } from './auth.service.js';
+import { AuthService, LoginResult } from './auth.service.js';
 import { AuthToken, DeviceMetadata } from './types/index.js';
 
 const DEVICE_NAME_API_HEADER = {
@@ -77,7 +84,17 @@ export class AuthController {
   @Public()
   @Post('login')
   @ApiOperation({ summary: 'Login with email and password' })
-  @ApiOkResponse({ type: AuthTokenResponseDto })
+  @ApiExtraModels(AuthTokenResponseDto, TwoFactorChallengeResponseDto)
+  @ApiOkResponse({
+    description:
+      'Token pair, or a two-factor challenge when the account requires 2FA',
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(AuthTokenResponseDto) },
+        { $ref: getSchemaPath(TwoFactorChallengeResponseDto) },
+      ],
+    },
+  })
   @ApiUnauthorizedResponse({ description: 'Invalid email or password' })
   @ApiHeader(DEVICE_NAME_API_HEADER)
   login(
@@ -85,11 +102,79 @@ export class AuthController {
     @DeviceName() deviceName: string | null,
     @Ip() ipAddress: string,
     @Headers('user-agent') userAgent?: string,
-  ): Promise<AuthToken> {
+  ): Promise<LoginResult> {
     return this.authService.login(
       loginDto,
       this.getMetadata(deviceName, ipAddress, userAgent),
     );
+  }
+
+  @Public()
+  @Post('2fa/login')
+  @ApiOperation({
+    summary: 'Complete a login that requires a second factor',
+    description:
+      'Exchanges a challenge token and a second factor for a token pair.',
+  })
+  @ApiOkResponse({ type: AuthTokenResponseDto })
+  @ApiUnauthorizedResponse({ description: 'Invalid challenge or code' })
+  @ApiHeader(DEVICE_NAME_API_HEADER)
+  twoFactorLogin(
+    @Body() twoFactorLoginDto: TwoFactorLoginDto,
+    @DeviceName() deviceName: string | null,
+    @Ip() ipAddress: string,
+    @Headers('user-agent') userAgent?: string,
+  ): Promise<AuthToken> {
+    return this.authService.twoFactorLogin(
+      twoFactorLoginDto,
+      this.getMetadata(deviceName, ipAddress, userAgent),
+    );
+  }
+
+  @Post('2fa/setup')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Generate a two-factor secret',
+    description:
+      'Returns a secret, an otpauth URI and a QR code. Two-factor is not active until the setup is verified.',
+  })
+  @ApiOkResponse({ type: TwoFactorSetupResponseDto })
+  twoFactorSetup(
+    @CurrentUser() currentUser: RequestUser,
+  ): Promise<TwoFactorSetupResponseDto> {
+    return this.authService.twoFactorSetup(currentUser);
+  }
+
+  @Post('2fa/verify')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Activate two-factor authentication',
+    description:
+      'Confirms the pending secret and returns single use recovery codes.',
+  })
+  @ApiOkResponse({ type: TwoFactorEnabledResponseDto })
+  @ApiUnauthorizedResponse({ description: 'Invalid verification code' })
+  twoFactorVerify(
+    @CurrentUser() currentUser: RequestUser,
+    @Body() twoFactorCodeDto: TwoFactorCodeDto,
+  ): Promise<TwoFactorEnabledResponseDto> {
+    return this.authService.twoFactorVerify(currentUser, twoFactorCodeDto);
+  }
+
+  @Post('2fa/disable')
+  @ApiBearerAuth('access-token')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Disable two-factor authentication',
+    description: 'Requires a valid code or a recovery code.',
+  })
+  @ApiNoContentResponse({ description: 'Two-factor authentication disabled' })
+  @ApiUnauthorizedResponse({ description: 'Invalid verification code' })
+  twoFactorDisable(
+    @CurrentUser() currentUser: RequestUser,
+    @Body() twoFactorCodeDto: TwoFactorCodeDto,
+  ): Promise<void> {
+    return this.authService.twoFactorDisable(currentUser, twoFactorCodeDto);
   }
 
   @Public()

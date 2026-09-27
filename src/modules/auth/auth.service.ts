@@ -10,18 +10,30 @@ import {
   LogoutDto,
   RefreshTokenDto,
   RegisterDto,
+  TwoFactorCodeDto,
+  TwoFactorEnabledResponseDto,
+  TwoFactorLoginDto,
   UserDeviceDto,
 } from './dto/index.js';
 import { RefreshTokenRevokedReason } from './enums/index.js';
 import { RefreshTokenService } from './refresh-token.service.js';
 import { DeviceService } from './device.service.js';
-import { AuthToken, DeviceMetadata, TokenMetadata } from './types/index.js';
+import { TwoFactorService } from './two-factor.service.js';
+import {
+  AuthToken,
+  DeviceMetadata,
+  TokenMetadata,
+  TwoFactorChallenge,
+  TwoFactorSetup,
+} from './types/index.js';
 
 type RotationResult =
   | { status: 'ok'; refreshToken: string }
   | { status: 'invalid' }
   | { status: 'reused' }
   | { status: 'expired' };
+
+export type LoginResult = AuthToken | TwoFactorChallenge;
 
 @Injectable()
 export class AuthService {
@@ -30,6 +42,7 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly refreshTokenService: RefreshTokenService,
     private readonly deviceService: DeviceService,
+    private readonly twoFactorService: TwoFactorService,
   ) {}
 
   async register(
@@ -50,10 +63,15 @@ export class AuthService {
     return this.createAuthToken(user, token);
   }
 
+  /**
+   * Password check only. When the account has 2FA enabled no tokens are issued
+   * here, the caller receives a short lived challenge instead and has to prove
+   * the second factor on the two-factor login route.
+   */
   async login(
     loginDto: LoginDto,
     metadata: DeviceMetadata,
-  ): Promise<AuthToken> {
+  ): Promise<LoginResult> {
     const user = await this.usersService.findByEmail(loginDto.email);
 
     if (!user || !user.isActive) {
@@ -70,9 +88,57 @@ export class AuthService {
     }
 
     const userResponse = UserResponseDto.fromEntity(user);
+
+    if (await this.twoFactorService.isEnabled(user.id)) {
+      return this.twoFactorService.issueChallenge(user.id);
+    }
+
     const { token } = await this.issueSession(user.id, metadata);
 
     return this.createAuthToken(userResponse, token);
+  }
+
+  /**
+   * Completes a login that was interrupted by the second factor check.
+   */
+  async twoFactorLogin(
+    twoFactorLoginDto: TwoFactorLoginDto,
+    metadata: DeviceMetadata,
+  ): Promise<AuthToken> {
+    const userId = this.twoFactorService.verifyChallengeToken(
+      twoFactorLoginDto.challengeToken,
+    );
+    const user = await this.usersService.findById(userId);
+
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('Invalid two-factor challenge');
+    }
+
+    await this.twoFactorService.verifyChallenge(userId, twoFactorLoginDto.code);
+
+    const { token } = await this.issueSession(user.id, metadata);
+
+    return this.createAuthToken(UserResponseDto.fromEntity(user), token);
+  }
+
+  twoFactorSetup(currentUser: RequestUser): Promise<TwoFactorSetup> {
+    return this.twoFactorService.setup(currentUser.id, currentUser.email);
+  }
+
+  twoFactorVerify(
+    currentUser: RequestUser,
+    twoFactorCodeDto: TwoFactorCodeDto,
+  ): Promise<TwoFactorEnabledResponseDto> {
+    return this.twoFactorService
+      .verifySetup(currentUser.id, twoFactorCodeDto.code)
+      .then(({ recoveryCodes }) => ({ enabled: true as const, recoveryCodes }));
+  }
+
+  async twoFactorDisable(
+    currentUser: RequestUser,
+    twoFactorCodeDto: TwoFactorCodeDto,
+  ): Promise<void> {
+    await this.twoFactorService.disable(currentUser.id, twoFactorCodeDto.code);
   }
 
   async refresh(

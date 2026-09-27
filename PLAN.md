@@ -499,11 +499,6 @@ Expected commit:
 ```text
 feat: add device authentication foundation
 ```
-Expected commit:
-
-```text
-feat: add device authentication foundation
-```
 
 Implementation notes:
 
@@ -533,10 +528,9 @@ src/modules/auth/types/device-metadata.interface.ts
   exhaustive coverage matters more than staying dependency free.
 
 ---
-
 ## Phase 9: Two-Factor Authentication
 
-Status: Pending
+Status: Done
 
 Goal:
 
@@ -544,13 +538,14 @@ Add optional 2FA support.
 
 Tasks:
 
-- [ ] Add 2FA secret storage
-- [ ] Add 2FA setup endpoint
-- [ ] Add 2FA verify endpoint
-- [ ] Add 2FA login flow
-- [ ] Add recovery code support if needed
+- [x] Add 2FA secret storage
+- [x] Add 2FA setup endpoint
+- [x] Add 2FA verify endpoint
+- [x] Add 2FA login flow
+- [x] Add recovery code support if needed
 
 Expected routes:
+
 ```text
 POST /auth/2fa/setup 
 POST /auth/2fa/verify 
@@ -558,12 +553,44 @@ POST /auth/2fa/disable
 ```
 
 Expected commit:
+
 ```text
 feat: add two-factor authentication foundation
 ```
 
----
+Implementation notes:
 
+```text
+src/modules/auth/entities/two-factor-secret.entity.ts
+src/modules/auth/two-factor.service.ts
+src/modules/auth/dto/two-factor-*.dto.ts
+src/modules/auth/types/two-factor*.ts
+src/common/utils/encryption.util.ts
+src/common/utils/recovery-code.util.ts
+src/configs/two-factor.config.ts
+```
+
+- TOTP via `otpauth`, QR codes via `qrcode`.
+- The shared secret is never stored in the clear. It is encrypted with
+  AES-256-GCM using `TWO_FACTOR_ENCRYPTION_KEY`, and the auth tag is verified on
+  read so tampered rows fail loudly. Rotating the key invalidates every stored
+  secret.
+- `POST /auth/2fa/setup` issues a secret but does not activate 2FA.
+  `POST /auth/2fa/verify` confirms it with a code and only then enables 2FA and
+  returns the recovery codes, which are shown once.
+- Recovery codes are Crockford style base32, stored as salted hashes and removed
+  from the list as they are spent, so the array doubles as the set still usable.
+- `POST /auth/login` returns HTTP 200 with a short lived challenge token instead
+  of tokens when 2FA is on. `POST /auth/2fa/login` exchanges the challenge plus
+  a TOTP code or a recovery code for the token pair.
+- TOTP steps are single use. The last accepted counter is persisted, so replaying
+  a code inside its own 30 second window is rejected.
+- Five invalid attempts locks verification for 15 minutes. Rate limiting on the
+  routes themselves is still tracked in Phase 11.
+- Setting `TWO_FACTOR_ENABLED=false` turns the feature off globally, and login
+  falls back to the single factor flow.
+
+---
 ## Phase 10: Cache and Performance
 
 Status: Pending
@@ -645,6 +672,6 @@ Before starting a phase:
 | Phase 6 | API Documentation | Done |
 | Phase 7 | Refresh Tokens | Done |
 | Phase 8 | Device Authentication | Done |
-| Phase 9 | Two-Factor Authentication | Pending |
+| Phase 9 | Two-Factor Authentication | Done |
 | Phase 10 | Cache and Performance | Pending |
 | Phase 11 | Production Hardening | Pending |
