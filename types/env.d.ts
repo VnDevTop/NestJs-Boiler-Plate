@@ -7,9 +7,9 @@ declare namespace NodeJS {
     API_PREFIX?: string;
     API_VERSION?: string;
     
-    OBSERVE_APP_KEY: string;
-    OBSERVE_APP_SECRET: string;
-    OBSERVE_SERVICE_ID: string;
+    OBSERVE_APP_KEY?: string;
+    OBSERVE_APP_SECRET?: string;
+    OBSERVE_SERVICE_ID?: string;
 
     // DATABASE_HOST: string;
     // DATABASE_PORT: number;
@@ -17,17 +17,35 @@ declare namespace NodeJS {
     // DATABASE_USER: string;
     // DATABASE_PASSWORD: string;
     DATABASE_URL: string;
+    DATABASE_SSL?: 'true'|'false';
+    DATABASE_SCHEMA?: string;
 
     TWO_FACTOR_ENABLED?: 'true' | 'false';
-    TWO_FACTOR_ENCRYPTION_KEY: string;
+    TWO_FACTOR_ENCRYPTION_KEY?: string;
     TWO_FACTOR_ISSUER?: string;
 
     CACHE_BACKEND?: 'redis' | 'valkey' | 'memory';
-    CACHE_URL: string;
+    CACHE_URL?: string;
     CACHE_KEY_PREFIX?: string;
     CACHE_DEFAULT_TTL?: string;
     CACHE_EMPTY_TTL?: string;
     CACHE_CONNECT_TIMEOUT?: string;
+
+    SECURITY_ENABLED?: string;
+    SECURITY_CONTENT_SECURITY_POLICY?: string;
+    SECURITY_HSTS_MAX_AGE?: string;
+    SECURITY_REFERRER_POLICY?: string;
+
+    CORS_ORIGINS?: string;
+    CORS_CREDENTIALS?: string;
+    CORS_MAX_AGE?: string;
+
+    THROTTLE_TTL?: string;
+    THROTTLE_LIMIT?: string;
+    THROTTLE_BLOCK_DURATION?: string;
+
+    ADMIN_EMAIL?: string;
+    ADMIN_PASSWORD?: string;
 
     JWT_SECRET: string;
     JWT_EXPIRES_IN: number | StringValue;

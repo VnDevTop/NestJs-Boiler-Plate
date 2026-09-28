@@ -12,6 +12,20 @@ export async function hashPassword(password: string): Promise<string> {
   return `${salt}:${derivedKey.toString('hex')}`;
 }
 
+/**
+ * A password to show once and hand over, for a seed that has no password of its
+ * own.
+ *
+ * base64url rather than picking from an alphabet by `byte % length`, because
+ * that would favour the first 256 % length characters. 24 characters is 144 bits,
+ * far more than any human chosen password.
+ */
+export function generatePassword(length = 24): string {
+  return randomBytes(Math.ceil((length * 3) / 4))
+    .toString('base64url')
+    .slice(0, length);
+}
+
 export async function verifyPassword(
   password: string,
   passwordHash: string,

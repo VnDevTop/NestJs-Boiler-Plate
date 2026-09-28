@@ -9,7 +9,15 @@ export const databaseConfig = registerAs(
     autoLoadEntities: true,
     //synchronize: true,
     logging: ['info', 'error'],
-    ssl: { rejectUnauthorized: false },
-    extra: { ssl: { rejectUnauthorized: false } },
+    ssl:
+      process.env.DATABASE_SSL === 'false'
+        ? false
+        : { rejectUnauthorized: false },
+    extra: {
+      ssl:
+        process.env.DATABASE_SSL === 'false'
+          ? false
+          : { rejectUnauthorized: false },
+    },
   }),
 );

@@ -1,0 +1,176 @@
+# Production hardening
+
+Everything here is configuration, so it lives in `.env`. See `.env.example` for
+the full list with defaults.
+
+## Rate limiting
+
+`@nestjs/throttler`, registered as a global guard, so a new endpoint is limited
+from the moment it exists instead of only after someone remembers.
+
+```dotenv
+THROTTLE_TTL=60000           # counting window
+THROTTLE_LIMIT=100           # requests per window per client
+THROTTLE_BLOCK_DURATION=0    # 0 blocks for the rest of the window
+```
+
+Credential routes override it with `@Throttle`, because the global number is far
+too generous for a route that accepts a password or a six digit code:
+
+| Route | Limit | Why |
+| --- | --- | --- |
+| `POST /auth/login` | 5 / min | Password guessing is the threat |
+| `POST /auth/2fa/login` | 5 / 5 min | A TOTP code is 1 in a million |
+| `POST /auth/2fa/verify` | 5 / 5 min | Same, and it is a second factor |
+| `POST /auth/register` | 10 / 5 min | Cheap to call, creates rows |
+| `POST /auth/refresh-token` | 20 / min | Rotation is a write per call |
+
+Counters live in process memory, so with several replicas the effective limit is
+the configured limit **per replica**. That is often fine, and occasionally useful,
+but it is not a global limit. Sharing counters means pointing the throttler at a
+shared store, which is a deliberate change rather than a default.
+
+## Security headers
+
+`helmet`, with HSTS on, plus `X-Content-Type-Options`, `X-Frame-Options` and
+`Referrer-Policy: no-referrer`.
+
+Content-Security-Policy is **off** by default, because the Swagger UI served at
+`/docs` needs inline scripts and styles and a strict policy blocks it. Turn
+`SECURITY_CONTENT_SECURITY_POLICY=true` on once a real front end is known, and
+serve `/docs` only where that is not a concern.
+
+HSTS does nothing over plain HTTP, so it only takes effect behind TLS, which is
+what `includeSubDomains` already assumes.
+
+## CORS
+
+```dotenv
+CORS_ORIGINS=https://app.example.com,https://admin.example.com
+CORS_CREDENTIALS=false
+```
+
+`CORS_CREDENTIALS=false` by default, because this API authenticates with an
+`Authorization` header rather than a cookie. Turning it on requires an explicit
+allow-list: validation rejects `CORS_CREDENTIALS=true` together with a wildcard
+or an empty list, since browsers refuse that combination anyway and a config
+that only looks like it works is worse than one that fails loudly.
+
+`X-Request-Id` is exposed so a browser can read it and quote it in a bug report.
+
+## Request id
+
+Every response carries `X-Request-Id`. A client supplied id is reused when it
+looks safe: 8 to 64 characters from a restricted charset. An id containing a
+newline or a control character is discarded and replaced, because a caller who
+can choose the value printed on every log line can forge or split log entries.
+
+The id is held in an `AsyncLocalStorage`, so a log line written deep inside a
+service includes it without the call site knowing anything about requests.
+
+## Logging
+
+One JSON object per line in production:
+
+```json
+{"timestamp":"2026-01-01T00:00:00.000Z","level":"error","context":"CacheModule","requestId":"...","message":"Cache unavailable: connect ECONNREFUSED ..."}
+```
+
+Human readable elsewhere. A message containing newlines is collapsed to a single
+line so a stack trace cannot be misread as several entries, and an `Error` is
+serialised with its name, message and stack rather than as `{}`.
+
+## Health checks
+
+```text
+GET /api/v1/health/live    liveness, touches nothing external
+GET /api/v1/health/ready   database and cache
+GET /api/v1/health         the same as ready
+```
+
+Liveness and readiness are separate on purpose. Liveness must stay green while a
+dependency is down: a failing liveness probe makes an orchestrator restart every
+healthy instance at exactly the wrong moment. Readiness is the one that goes red,
+so traffic is diverted without a restart.
+
+The cache check writes a random value and reads it back. A plain read would
+report healthy on a dead cache, because cache-manager turns a failing store into
+a miss, so "unreachable" and "empty" are indistinguishable. The round trip is
+what separates them.
+
+## Graceful shutdown
+
+`app.enableShutdownHooks()`, so SIGTERM lets in-flight requests finish, closes the
+database pool and exits on its own. `docker-compose.yml` allows 30 seconds for
+that.
+
+`ShutdownService` flips a flag on the first signal and `/health/ready` reports not
+ready from then on, so a load balancer stops sending new requests while the
+existing ones drain.
+
+## Environment validation
+
+`validateEnvironment` runs before anything connects and reports every problem at
+once rather than one per restart:
+
+```text
+Invalid environment configuration:
+  - DATABASE_URL must use one of: postgres:, postgresql:
+  - JWT_SECRET must be at least 32 characters
+  - JWT_REFRESH_SECRET still holds the example value
+```
+
+Strictness depends on `NODE_ENV`. Locally a placeholder secret is fine, so only
+presence is checked. In production secrets must be at least 32 characters and
+must not still hold the value from `.env.example`, since that file is in the
+repository and a secret in it is not a secret.
+
+## Migrations and seed
+
+```bash
+npm run migration:generate   # create a migration from entity changes
+npm run migration:run
+npm run migration:revert
+npm run seed
+```
+
+`synchronize` is off. Schema changes go through a reviewed migration, so a
+deployment cannot quietly rewrite a production table.
+
+Entities are listed explicitly in `src/database/data-source.ts`, because
+`autoLoadEntities` only works inside the Nest container, and a migration that
+silently missed an entity would generate an incomplete schema. The initial
+migration is qualified with `"public"`; set `DATABASE_SCHEMA` to target another
+schema.
+
+The seed creates one admin and is idempotent, so a half finished seed or an
+accidental second run neither duplicates the admin nor fails on the unique email.
+There is no default password: `ADMIN_PASSWORD` is required and must be at least
+12 characters, because an account seeded with a published password is a published
+account.
+
+```bash
+ADMIN_PASSWORD='choose-something-long' npm run seed
+```
+
+## Docker
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Brings up Postgres and Valkey, runs migrations, then starts the app on port 3000.
+The cache is configured with no persistence, so a restart starts cold rather than
+resurrecting entries a restart may have made stale.
+
+The image is a two stage build: compiler and dev dependencies stay in the build
+stage, and the runtime stage runs as the `node` user with production
+dependencies only. Its healthcheck uses the liveness endpoint, so a database
+problem cannot make the container look dead and get it restarted.
+
+## CI
+
+`.github/workflows/ci.yml` runs lint, typecheck, test and build on Node 24, then
+builds the image. The image is built but not pushed, since publishing needs
+registry credentials the template does not assume.

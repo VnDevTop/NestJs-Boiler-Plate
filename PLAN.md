@@ -619,7 +619,6 @@ src/configs/cache.config.ts
 src/core/cache/cache.module.ts
 src/core/cache/cache.service.ts
 src/core/cache/cache-keys.ts
-src/core/cache/cache.constants.ts
 src/core/cache/cache.service.spec.ts
 ```
 
@@ -673,7 +672,7 @@ src/core/cache/cache.service.spec.ts
 
 ## Phase 11: Production Hardening
 
-Status: Pending
+Status: Done
 
 Goal:
 
@@ -681,30 +680,92 @@ Prepare the boilerplate for production usage.
 
 Tasks:
 
-- [ ] Add rate limiting
-- [ ] Add security headers
-- [ ] Add CORS config
-- [ ] Add request id
-- [ ] Add structured logging
-- [ ] Add health check
-- [ ] Add graceful shutdown
-- [ ] Add environment validation
-- [ ] Add seed command
-- [ ] Add migration command
-- [ ] Add CI workflow
-- [ ] Add Dockerfile
-- [ ] Add docker-compose for local development
+- [x] Add rate limiting
+- [x] Add security headers
+- [x] Add CORS config
+- [x] Add request id
+- [x] Add structured logging
+- [x] Add health check
+- [x] Add graceful shutdown
+- [x] Add environment validation
+- [x] Add seed command
+- [x] Add migration command
+- [x] Add CI workflow
+- [x] Add Dockerfile
+- [x] Add docker-compose for local development
 
 Expected commit:
 ```text
 chore: add production hardening foundation
 ```
 
+Implementation notes:
+
+```text
+src/configs/security.config.ts
+src/configs/cors.config.ts
+src/configs/throttler.config.ts
+src/configs/env.validation.ts
+src/common/middlewares/request-id.middleware.ts
+src/common/utils/request-id.util.ts
+src/core/logger/app.logger.ts
+src/core/health/health.module.ts
+src/core/health/cache.health.ts
+src/core/health/shutdown.service.ts
+src/database/data-source.ts
+src/database/seed.ts
+src/database/seeds/
+src/database/migrations/
+docs/production.md
+```
+
+- Rate limiting is a global `ThrottlerGuard`, so a new endpoint is limited from
+  the moment it exists. The credential routes override it with `@Throttle`,
+  because 100 per minute is no defence at all for a route that accepts a
+  password: login is 5 per minute, the TOTP routes 5 per 5 minutes, since a six
+  digit code is 1 in a million. Counters are in process memory, so with several
+  replicas the limit is per replica. Sharing them means a shared throttler store,
+  which is left as a deliberate change rather than made a default.
+- CORS defaults to same-origin only and `credentials` to false, since this API
+  authenticates with a bearer token rather than a cookie. Validation rejects
+  `CORS_CREDENTIALS=true` together with a wildcard, because browsers refuse that
+  pairing anyway and a config that only appears to work is worse than one that
+  fails.
+- A request id is reused from the client only when it is 8 to 64 characters of a
+  restricted charset. A newline in that value would let a caller forge or split
+  log entries, so it is discarded and replaced. The id lives in an
+  `AsyncLocalStorage`, so logs from deep inside a service correlate without the
+  call site knowing about requests.
+- Logging is one JSON object per line in production, with the request id included
+  when there is one. Newlines inside a message are collapsed, so a stack trace
+  cannot be read as several entries.
+- Health checks are split into liveness and readiness. Liveness touches nothing
+  external, because a failing liveness probe makes an orchestrator restart every
+  healthy instance at the exact moment a dependency is down. Readiness checks the
+  database and the cache, and reports not ready once shutdown has started.
+- The cache health check writes a random value and reads it back. A plain read
+  would report healthy on a dead cache, which is the same trap that made
+  `CacheService.isHealthy()` impossible in Phase 10.
+- Environment validation reports every problem at once. It is strict in
+  production, where a secret that still holds the `.env.example` value counts as
+  unset, and lenient in development so a placeholder does not block local work.
+- `synchronize` is off and schema changes go through reviewed migrations.
+  Entities are listed explicitly in the standalone data source, since
+  `autoLoadEntities` only works inside the Nest container and a migration that
+  missed an entity would silently generate an incomplete schema.
+- The seed creates one admin and is idempotent. It refuses to invent a password:
+  `ADMIN_PASSWORD` is required and must be long, because an account seeded with a
+  published password is a published account.
+- The Docker image is a two stage build running as the `node` user, and its
+  healthcheck uses the liveness endpoint so a database problem cannot get the
+  container restarted.
+
 ---
 
 ## Current Execution Rule
 
-Only implement one phase at a time.
+All planned phases are implemented. Follow-up work is tracked as new phases
+below, one at a time, in the same way.
 
 Before starting a phase:
 
@@ -713,6 +774,21 @@ Before starting a phase:
 3. Implement only the required files.
 4. Run lint/typecheck/test when applicable.
 5. Commit the phase separately.
+
+---
+
+## Follow-up Candidates
+
+Not scheduled. Each needs a decision before it becomes a phase.
+
+- A shared throttler store, so rate limits are global across replicas rather than
+  per instance.
+- Pagination on the admin and user listing routes, which currently return
+  everything they match.
+- A permission check that is more than the placeholder in `PermissionsGuard`.
+- CI that also runs the e2e suite against a Postgres and Valkey service
+  container, which `test/app.e2e-spec.ts` still cannot run because
+  `supertest/types` is unresolvable.
 
 ---
 
@@ -731,4 +807,4 @@ Before starting a phase:
 | Phase 8 | Device Authentication | Done |
 | Phase 9 | Two-Factor Authentication | Done |
 | Phase 10 | Cache and Performance | Done |
-| Phase 11 | Production Hardening | Pending |
+| Phase 11 | Production Hardening | Done |

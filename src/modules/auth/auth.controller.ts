@@ -1,3 +1,4 @@
+import { Throttle } from '@nestjs/throttler';
 import {
   Body,
   Controller,
@@ -64,6 +65,9 @@ const DEVICE_NAME_API_HEADER = {
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  // Registration is cheap to call and creates rows, so it gets its own
+  // tighter budget than the global one.
+  @Throttle({ default: { limit: 10, ttl: 300000 } })
   @Public()
   @Post('register')
   @ApiOperation({ summary: 'Register a new user' })
@@ -81,6 +85,9 @@ export class AuthController {
     );
   }
 
+  // Password guessing is the reason this route exists, so it is the
+  // tightest limit in the app.
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Public()
   @Post('login')
   @ApiOperation({ summary: 'Login with email and password' })
@@ -109,6 +116,9 @@ export class AuthController {
     );
   }
 
+  // A six digit code has a million combinations, so it must not be
+  // brute forceable.
+  @Throttle({ default: { limit: 5, ttl: 300000 } })
   @Public()
   @Post('2fa/login')
   @ApiOperation({
@@ -145,6 +155,7 @@ export class AuthController {
     return this.authService.twoFactorSetup(currentUser);
   }
 
+  @Throttle({ default: { limit: 5, ttl: 300000 } })
   @Post('2fa/verify')
   @ApiBearerAuth('access-token')
   @ApiOperation({
@@ -177,6 +188,7 @@ export class AuthController {
     return this.authService.twoFactorDisable(currentUser, twoFactorCodeDto);
   }
 
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   @Public()
   @Post('refresh-token')
   @ApiOperation({
