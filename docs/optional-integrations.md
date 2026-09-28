@@ -1,0 +1,72 @@
+# Optional Integrations
+
+An integration can exist in the code without its package existing on disk. A
+feature nobody enabled costs zero dependencies, zero install time and zero
+memory: the module resolves to `null` and the app carries on.
+
+## How it works
+
+`src/core/optional/optional.util.ts` exposes `loadOptional<T>(specifier)`, built
+on `createRequire(import.meta.url)`:
+
+```ts
+const loaded = loadOptional<typeof import('nodemailer')>('nodemailer');
+// typeof import(...) is a type only, so it needs no runtime import.
+```
+
+A bare `import` of an optional package is resolved when the app is built, so a
+missing package becomes a build failure rather than a disabled feature. Nothing
+in `src/` may statically import a package from `OPTIONAL_PACKAGES`;
+`optional-packages.spec.ts` fails the build if one ever does.
+
+Registrations go through `createOptionalProvider()`, whose `useFactory` returns
+the module or `null`:
+
+```ts
+providers: [
+  createOptionalProvider('nodemailer', { isEnabled: () => config.enabled }),
+];
+```
+
+`null` is a supported injected value. Consumers branch on it and fall back; they
+never throw, because a feature nobody enabled must not be a startup failure.
+
+## Enabling a feature
+
+1. Install the package.
+2. Set the env flag.
+3. Restart. No code change.
+
+| Feature                | Package to install (only if enabled) | Env flag                  | Install command                     |
+| ---------------------- | ------------------------------------ | ------------------------- | ----------------------------------- |
+| SMTP (production mail) | `nodemailer`                         | `MAIL_TRANSPORT=smtp`     | `npm install nodemailer`            |
+| Amazon SES             | `@aws-sdk/client-sesv2`              | `MAIL_TRANSPORT=ses`      | `npm install @aws-sdk/client-sesv2` |
+| SendGrid               | `@sendgrid/mail`                     | `MAIL_TRANSPORT=sendgrid` | `npm install @sendgrid/mail`        |
+| BullMQ queue           | `@nestjs/bullmq` + `bullmq`          | `QUEUE_ENABLED=true`      | `npm install @nestjs/bullmq bullmq` |
+
+## Package-free integrations
+
+These ship in the box, because the implementation is small enough that a
+dependency would cost more than the code:
+
+| Feature                | Env flag                | Install command   | Implementation                                                            |
+| ---------------------- | ----------------------- | ----------------- | ------------------------------------------------------------------------- |
+| Development mail       | `MAIL_TRANSPORT=memory` | nothing, built in | `transports/memory-mail.transport.ts` keeps messages in memory            |
+| Telegram notifications | `TELEGRAM_ENABLED=true` | nothing, built in | `transports/telegram.channel.ts`, raw HTTPS, MarkdownV2 escaped centrally |
+| Slack / Discord        | `SLACK_ENABLED=true`    | nothing, built in | `transports/slack.channel.ts`, incoming webhook, Block Kit payload        |
+
+Both webhook channels post through `transports/https-post.ts`, a small
+`node:https` wrapper that refuses anything but `https:` so a bot token is never
+sent in clear text.
+
+## Where each piece lives
+
+```text
+src/core/optional/
+├── optional.util.ts        loadOptional, the only way to reach an optional package
+├── optional.provider.ts    createOptionalProvider, the useFactory that may return null
+├── optional-packages.ts    the package list, the env flags and the install commands
+└── transports/             the in-house, package-free implementations
+```
+
+See `src/core/optional/README.md` for the rules that apply when adding one.
