@@ -2,6 +2,13 @@
 FROM node:24-alpine AS build
 WORKDIR /app
 
+# Match the npm version in package.json#packageManager (npm 11, shipped with
+# Node 24) so the image and local installs produce the same lockfile.
+RUN npm install -g npm@11
+
+# There is no git repository in the image, so the husky prepare hook must not run.
+ENV HUSKY=0
+
 # Copied on their own so a source-only change does not reinstall every dependency.
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -14,7 +21,7 @@ COPY src ./src
 RUN npm run build
 
 # Production dependencies only, installed against the built output.
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev --ignore-scripts
 
 # Runtime stage: no compiler, no dev dependencies, no source.
 FROM node:24-alpine AS runtime
