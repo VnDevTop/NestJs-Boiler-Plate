@@ -2,633 +2,539 @@
 
 ## Goal
 
-Build a production-ready NestJS boilerplate that can be reused as a GitHub template.
+Extend the boilerplate from a correct auth skeleton to something a real product
+can run on: users get contacted, the database stops growing on its own,
+authentication is served from cache, and the app can tell the operator what it
+is doing.
 
-Long-term target:
+The layer boundaries are unchanged. Everything below slots into `configs`,
+`database`, `common`, `core` and `modules` as they exist today.
 
-- JWT authentication
-- Refresh tokens
-- Two-factor authentication
-- Device authentication
-- Authorization with RBAC and future permissions
-- TypeORM database integration
-- Redis cache
-- Validation
-- Swagger API documentation
-- Scalable modular architecture
-- Centralized filters, pipes, guards, interceptors, decorators, and technical utilities
+Already built, not rebuilt here:
 
-Current focus:
+- JWT auth, refresh rotation, device authentication, two-factor
+- RBAC with roles, permissions and manager scope
+- `CacheService` with TTL, empty-TTL, coalescing and invalidation helpers
+- helmet, CORS allow-list, throttler, Swagger, Observe, Terminus health
+- TypeORM migrations, oxlint, vitest, husky, commitlint
 
-- Establish project architecture
-- Prepare clear folder/layer boundaries
-- Implement common and simple foundations first
-- Keep the codebase easy to extend and easy to review through small commits
+Gaps this plan closes:
+
+- Nothing ever emails a user, and there is no password reset or verification.
+- Soft-deleted rows and dead tokens accumulate with no retention policy.
+- `CacheService` exists but no service reads or invalidates it, so every
+  request still goes to Postgres.
+- No outbound notification channel, and no visibility into what the app sends.
 
 ---
 
-## Layer Overview
+## Phase 12: Optional Integration Foundation
 
-The project is organized into the following main layers:
+Status: Done
+
+Goal:
+
+Allow an integration to exist in the code without its package existing on disk.
+A feature nobody enabled must cost zero dependencies and zero memory.
+
+Tasks:
+
+- [x] Create `src/core/optional/optional.util.ts` with `loadOptional<T>(specifier)`
+      using `createRequire(import.meta.url)`
+- [x] Never use a static `import` for an optional package; a static import
+      breaks the build when the package is missing
+- [x] Register every optional integration through a `useFactory` that returns
+      `null` when the package is not resolvable
+- [x] Make `null` a real, tested code path in every consumer, not a `throw`
+- [x] Write the in-house, zero-dependency transports that the default profile
+      uses (mail memory transport, Telegram and Slack over raw HTTPS)
+- [x] Add `docs/optional-integrations.md`: feature, package, env flag, install command
+
+Integration matrix:
 
 ```text
-src 
-├── configs 
-├── database 
-├── common 
-├── core 
-└── modules
+Feature                 Package to install (only if enabled)   Env flag
+SMTP (production mail)   nodemailer                            MAIL_TRANSPORT=smtp
+Amazon SES              @aws-sdk/client-sesv2                 MAIL_TRANSPORT=ses
+SendGrid                @sendgrid/mail                        MAIL_TRANSPORT=sendgrid
+BullMQ queue            @nestjs/bullmq + bullmq               QUEUE_ENABLED=true
+Telegram                none, raw HTTPS                       TELEGRAM_ENABLED=true
+Slack / Discord         none, incoming webhook                SLACK_ENABLED=true
 ```
 
-### `configs`
+Implementation note:
 
-Application configuration layer.
+```ts
+import { createRequire } from 'node:module';
 
-Responsibilities:
+const requireOptional = createRequire(import.meta.url);
 
-- Load and expose environment-based configuration
-- Define configuration namespaces
-- Keep configuration centralized and type-safe
-- Avoid hard-coded values in modules/services
+export function loadOptional<T>(specifier: string): T | null {
+  try {
+    return requireOptional(specifier) as T;
+  } catch {
+    return null;
+  }
+}
+```
 
-Examples:
+Expected outcome:
 
-- App config
-- Database config
-- JWT config
-- Redis config
-- Observe/telemetry config
-- Swagger config
+- The app boots, passes tests and serves traffic with an empty
+  `optionalDependencies`, degrading cleanly instead of crashing.
+- Enabling a feature is a documented `npm install` plus an env flag.
 
----
-
-### `database`
-
-Database infrastructure layer.
-
-Responsibilities:
-
-- TypeORM setup-related files
-- Migrations
-- Seeds
-- Factories
-- Base database entities
-- Database subscribers
-- Shared database utilities
-
-This layer should not contain business logic.
-
-Contains:
-
-- `migrations`
-- `seeds`
-- `factories`
-- `subscribers`
-- `data-source.ts`, the standalone DataSource the TypeORM CLI needs
-
-A shared `entities/base.entity.ts` is not created: the feature entities own
-their own columns, and an abstraction over four columns is not yet one.
-
----
-
-### `common`
-
-Reusable application building blocks.
-
-Responsibilities:
-
-- Decorators
-- Guards
-- Pipes
-- Filters
-- Interceptors
-- Common DTOs
-- Common enums
-- Common constants
-- Common exceptions
-- Shared interfaces
-- Middlewares
-- Utility functions
-
-Rules:
-
-- `common` should not depend on business modules.
-- `common` should be generic and reusable across the whole app.
-- Guards in `common` should preferably rely on request context instead of directly loading business services.
-
-Examples:
-
-- `@Public()`
-- `@CurrentUser()`
-- `@Roles()`
-- `@ManagerOnly()`
-- `JwtAuthGuard`
-- `RolesGuard`
-- `ManagerGuard`
-- `HttpExceptionFilter`
-- `ResponseTransformInterceptor`
-- `ValidationPipe`
-
----
-
-### `core`
-
-Application-level technical modules.
-
-Responsibilities:
-
-- Bootstrap and expose technical capabilities
-- Centralize infrastructure modules used by the app
-- Keep production concerns isolated from business modules
-
-Examples:
-
-- Logger module
-- Cache module
-- Swagger setup
-- Health check
-- Security headers / CORS / rate limit setup
-- Global module providers if needed
-
----
-
-### `modules`
-
-Business modules.
-
-Responsibilities:
-
-- Business features
-- Domain services
-- Controllers
-- Feature-specific DTOs
-- Feature-specific entities
-- Feature-specific repositories
-
-Initial modules:
-
-- `auth`
-- `users`
-- `admin`
-
-Future modules can be added here.
-
-Rules:
-
-- Controllers should be thin.
-- Business logic should live in services.
-- Modules should avoid circular dependencies.
-- Feature-specific code should stay inside its own module.
-
----
-
-## Documentation
-
-This plan tracks **what was built and when**. How anything works is documented
-next to the code, so the explanation lives where someone looking for it will be.
+Expected commit:
 
 ```text
-docs/production.md           rate limiting, headers, CORS, logging, health, Docker, CI
-
-src/configs/README.md        config namespaces and environment validation
-src/database/README.md       migrations, seeds, the standalone data source
-src/common/README.md         guards, decorators, middleware, utilities
-src/core/README.md           technical capabilities
-src/core/cache/README.md     caching, coalescing, stale while revalidate, invalidation
-src/core/health/README.md    liveness vs readiness, the shutdown flag
-src/core/logger/README.md    dev colours vs production JSON
-src/core/swagger/README.md   OpenAPI setup
-src/modules/README.md        the module rules and the full route list
-src/modules/auth/README.md   sessions, rotation, devices, two-factor, rate limits
-src/modules/users/README.md  the user domain and its authorisation
-src/modules/admin/README.md  operator-only routes
+feat: add optional integration foundation
 ```
-
-A change to behaviour should update the README in the same commit as the code.
-A plan entry saying something is done is not documentation of how it works.
 
 ---
 
-## Phase 0: Project Architecture Skeleton
+## Phase 13: Configuration Expansion
 
 Status: Pending
 
 Goal:
 
-Create the base folder structure and documentation for each layer.
+Add the configuration namespaces the new modules need, with the same
+`registerAs` pattern, zod validation and `.env.example` entries the existing
+namespaces already have.
 
 Tasks:
 
-- [ ] Create `src/configs`
-- [ ] Create `src/database`
-- [ ] Create `src/common`
-- [ ] Create `src/core`
-- [ ] Create `src/modules`
-- [ ] Add README for each main layer
-- [ ] Add root `PLAN.md`
-- [ ] Commit architecture skeleton
+- [ ] Create `src/configs/mail.config.ts` — transport, from name, reply-to,
+      connection options, timeouts
+- [ ] Create `src/configs/notification.config.ts` — per-channel enable flags
+      and credentials
+- [ ] Create `src/configs/queue.config.ts` — enabled, redis url, attempts,
+      backoff, concurrency
+- [ ] Create `src/configs/retention.config.ts` — every age and batch size
+- [ ] Create `src/configs/password-policy.config.ts`
+- [ ] Add `APP_URL` to `app.config.ts`; every email links back to it
+- [ ] Add a `redis` namespace for queue and throttle usage, distinct from the
+      cache namespace so keys never collide
+- [ ] Extend `env.validation.ts`: in production `MAIL_FROM` is required,
+      `MAIL_TRANSPORT` must not be `memory`, `APP_URL` must be an absolute
+      https URL
+- [ ] Document every new variable in `.env.example` and `src/configs/README.md`
 
-Expected commit:
-```text
-chore: add initial scalable project structure
-```
-
----
-
-## Phase 1: Base Application Foundation
-
-Status: Done
-
-Goal:
-
-Add the minimal application-level foundation used by every project.
-
-Tasks:
-
-- [x] Define app config
-- [x] Define JWT config placeholder
-- [x] Organize existing database config
-- [x] Add global validation pipe
-- [x] Add global exception filter
-- [x] Add global response transform interceptor
-- [x] Add common metadata constants
-- [x] Add base response DTO/interface
-- [x] Add request context interface
+Implementation note: a validation rule that only fires in production is
+`superRefine` on the zod schema, not a check inside the service, so a bad
+deploy fails at boot instead of at the first email.
 
 Expected outcome:
 
-- App has consistent validation behavior
-- App has consistent error response
-- App has consistent success response
-- Configs are centralized
+- No hard-coded value anywhere in the new modules.
+- A misconfigured production environment is rejected at startup with a message
+  naming the variable.
 
 Expected commit:
-```text
-feat: add base application foundation
-```
 
+```text
+feat: add mail, notification, queue and retention configuration
+```
 
 ---
 
-## Phase 2: Users Module
+## Phase 14: Outbound Email
 
-Status: Done
+Status: Pending
 
 Goal:
 
-Create the user domain foundation.
+Deliver transactional email through a swappable transport, with templates
+written as plain functions so no template engine dependency is introduced.
 
 Tasks:
 
-- [x] Create `users.module.ts`
-- [x] Create `users.controller.ts`
-- [x] Create `users.service.ts`
-- [x] Create `user.entity.ts`
-- [x] Create create/update user DTOs
-- [x] Add basic user response DTO
-- [x] Add `Role` enum
-- [x] Add `isActive`
-- [x] Add `isManager`
-- [x] Add timestamps
-- [x] Add soft delete column if needed
-- [x] Add methods to find user by id/email
-- [x] Add basic user profile route
+- [ ] Create `src/modules/mail` with `mail.module.ts`, `mail.service.ts`
+- [ ] Define `MailTransport { send(message): Promise<SendResult> }` in
+      `transports/transport.interface.ts`
+- [ ] Implement `memory.transport.ts` as the zero-dependency dev default
+- [ ] Implement `smtp.transport.ts` over the optional `nodemailer`
+- [ ] Implement `ses.transport.ts` and `sendgrid.transport.ts` over their
+      optional packages
+- [ ] Make `memory` the development default and refuse it in production
+- [ ] Build `templates/template.registry.ts` mapping a name to
+      `{ subject, render(data) }`
+- [ ] Render both an HTML and a plain-text part for every template
+- [ ] Give each template exactly the data it needs, never the user entity
+- [ ] Generate a stable mail id per message, log it, and return it to the caller
+- [ ] Add `POST /auth/forgot-password`, returning 202 with a generic message
+- [ ] Add `POST /auth/reset-password`, single-use token, invalidates other
+      sessions on success
+- [ ] Add `POST /auth/verify-email` and `POST /auth/resend-verification`
+- [ ] Add the `email_verification_tokens` and `password_reset_tokens` entities
+- [ ] Store tokens hashed with sha256, never in plaintext
+- [ ] Index `expiresAt` on every token table, Phase 16 cleans on it
+- [ ] Add a throttler bucket for mail: 3 reset mails per hour per email and
+      10 per hour per IP
 
-Expected initial user fields:
+Template set:
+
 ```text
-id email password firstName lastName role isActive isManager lastLoginAt createdAt updatedAt deletedAt
+welcome            after register            firstName, appName
+verify-email       after register / resend   verificationUrl, expiresInHours
+reset-password     forgot password           resetUrl, ip, expiresInMinutes
+password-changed   after reset, forced      ip, deviceLabel
+new-device-login   refresh from new device   deviceLabel, ip, time
+account-locked     lockout or admin action   reason, supportUrl
 ```
 
+Security notes that are part of the definition of done:
+
+- `forgot-password` answers identically, with comparable timing, whether or not
+  the email exists.
+- The reset token is consumed inside the same transaction that changes the
+  password, so a crash can never leave a live token with a changed password.
+- `MailService.send()` must not add latency to `register()` or `login()`; it
+  resolves as soon as the job is accepted.
+
+Expected outcome:
+
+- A new user receives a welcome email, can verify their address, and can reset
+  a forgotten password.
+- A provider outage degrades to a logged error, never a 500 on register.
 
 Expected commit:
+
 ```text
-feat: add users module foundation
+feat: add transactional email with pluggable transports
 ```
 
 ---
 
-## Phase 3: Auth Module - Basic JWT
+## Phase 15: Background Job Queue
 
-Status: Done
+Status: Pending
 
 Goal:
 
-Implement basic authentication using JWT access token.
+Move email sending and notifications out of the request cycle, and give the
+retention job a scheduler.
 
 Tasks:
 
-- [x] Create `auth.module.ts`
-- [x] Create `auth.controller.ts`
-- [x] Create `auth.service.ts`
-- [x] Create login DTO
-- [x] Create register DTO
-- [x] Add password hashing utility/service
-- [x] Add JWT payload interface
-- [x] Add JWT strategy
-- [x] Add JWT auth guard
-- [x] Add `@Public()` decorator
-- [x] Add `@CurrentUser()` decorator
-- [x] Add `/auth/register`
-- [x] Add `/auth/login`
-- [x] Add `/auth/me`
-Expected routes:
-```text
-POST /auth/register 
-POST /auth/login 
-GET /auth/me
-```
+- [ ] Add `@nestjs/bullmq` as an optional dependency, resolved through
+      `loadOptional`, not a static import
+- [ ] Create `src/modules/queue` with a provider-level abstraction over the
+      queue so the module imports cleanly when the package is absent
+- [ ] Create queues: `mail`, `notification`, `maintenance`, `digest`
+- [ ] Move the mail send from Phase 14 into `processors/mail.processor.ts`
+- [ ] Add `retry.policy.ts`: exponential backoff, 5 attempts
+- [ ] Mark provider 4xx responses as non-retryable, retry only timeouts, 5xx
+      and connection errors
+- [ ] Send exhausted jobs to a dead-letter list in Redis and raise a log alarm
+- [ ] Add an in-process fallback: when the queue is disabled or Redis is
+      unreachable, run the same processor under a bounded concurrency limiter
+- [ ] Add an idempotency guard, `template + recipient + subject id`, using a
+      Redis `SET NX` with a TTL matching the retry window
+- [ ] Register the cron entry points, disabling them with `QUEUE_ENABLED=false`
 
+Implementation note: the fallback must call the same processor function as the
+queue does, so there is one implementation of the work and not two that drift.
+
+Expected outcome:
+
+- `register()` returns without waiting for SMTP.
+- A BullMQ redelivery cannot produce a duplicate welcome email.
+- Turning the queue off is a config change, not a code change.
 
 Expected commit:
-```text
-feat: add basic jwt authentication
-```
 
+```text
+feat: add background job queue with in-process fallback
+```
 
 ---
 
-## Phase 4: Authorization - RBAC and Manager Scope
+## Phase 16: Data Retention and Cleanup
 
-Status: Done
+Status: Pending
 
 Goal:
 
-Add authorization capabilities for role-based access and manager-only access.
+Bound the size of the database by deleting data that can no longer be useful,
+without ever taking a lock that hurts production traffic.
 
 Tasks:
 
-- [x] Add metadata constants
-- [x] Add `@Roles()` decorator
-- [x] Add `RolesGuard`
-- [x] Add `@ManagerOnly()` decorator
-- [x] Add `ManagerGuard`
-- [x] Protect manager/admin routes
-- [x] Ensure only users with `isManager = true` can access `/admin` routes
-- [x] Prepare `@Permissions()` decorator placeholder for future permission system
-Expected authorization decorators:
+- [ ] Create `src/modules/maintenance` with a `retention.service.ts`
+- [ ] Implement the policy below, every age configurable
+- [ ] Add a `maintenance.retention` cron at an off-peak hour, plus an
+      admin-triggered manual run
+- [ ] Delete in batches with `WHERE id IN (SELECT id ... LIMIT 5000)` and a
+      sleep between batches
+- [ ] Log a structured summary of rows deleted per target, and expose the last
+      run time and duration
+- [ ] Add `RETENTION_DRY_RUN` that reports what would be deleted and deletes
+      nothing
+- [ ] Add a hard-coded minimum age guard, so a misconfigured value cannot
+      delete fresh data
+- [ ] Add the `maintenance.log` entity, append-only, to record each run
+- [ ] Add an admin route to trigger a dry run and to read the history
+
+Retention policy:
+
 ```text
-@Public() 
-@CurrentUser() 
-@Roles() 
-@ManagerOnly() 
-@Permissions()
+Target                        Rule                                    Default
+users (soft deleted)          hard delete after deletedAt + N days     30
+email_verification_tokens     delete once expiresAt passed            +7 grace
+password_reset_tokens         delete once used, or expiresAt + N      +7 grace
+refresh_tokens                delete when revokedAt + N, or expired   7
+user_devices                  delete when no live refresh token       immediate
+mail_logs, notification_logs  delete rows older than N                30
+login attempt bookkeeping     delete rows older than N                7
+two-factor secrets            cascade with the user delete             -
 ```
 
+Expected outcome:
 
-Expected guards:
-```text
-JwtAuthGuard 
-RolesGuard 
-ManagerGuard 
-PermissionsGuard
-```
-
+- Table sizes flatten out under normal traffic instead of growing forever.
+- The first production run can be rehearsed safely with a dry run.
 
 Expected commit:
-```text
-feat: add rbac and manager authorization foundation
-```
 
+```text
+feat: add scheduled data retention and cleanup jobs
+```
 
 ---
 
-## Phase 5: Admin Module Foundation
+## Phase 17: Authentication and Authorization through Cache
 
-Status: Done
+Status: Pending
 
 Goal:
 
-Create a clean admin route scope.
+Serve authentication from Redis instead of Postgres, while a revoked session or
+a changed role still takes effect immediately rather than at TTL expiry.
 
 Tasks:
 
-- [x] Create `admin.module.ts`
-- [x] Create `admin.controller.ts`
-- [x] Create `admin.service.ts`
-- [x] Prefix admin routes with `/admin`
-- [x] Apply manager-only access
-- [x] Add basic admin health/dashboard route
+- [ ] Add `wrapOrLoad()` to `CacheService`: read-through with a lock on the
+      miss, so N concurrent requests do not trigger N queries
+- [ ] Cache the sanitised user under `user:<id>`, TTL 60s
+- [ ] Cache the email lookup under `user:email:<hash>`, TTL 300s
+- [ ] Cache the permission set under `perm:user:<id>`, TTL 60s
+- [ ] Cache the role permission map under `role:<role>`, TTL 600s
+- [ ] Cache revoked token ids under `token:revoked:<jti>`, TTL equal to the
+      remaining token lifetime
+- [ ] Change `JwtStrategy.validate()` to read through the cache instead of
+      querying the user table
+- [ ] Change `PermissionsGuard` to read the cached permission set instead of
+      querying per request
+- [ ] Invalidate on every write to `User`, `Role` and device state
+- [ ] Do the invalidation from a TypeORM subscriber in
+      `src/database/subscribers/`, not from each service, so it cannot be
+      forgotten in one of them
+- [ ] Add negative caching for lookups that miss, using the existing
+      `CACHE_EMPTY_TTL`
+- [ ] Wrap the cache so a Redis timeout falls back to the database and only
+      logs
+- [ ] Add a throttler key for login, two-factor and refresh, per IP and per
+      email, backed by Redis so limits hold across replicas
+- [ ] Replace the hard block on login with a progressive delay, so credential
+      stuffing is slowed without locking out a real user
+- [ ] Add `sessionsVersion` on the user, bumped on logout-everywhere, and
+      checked in the strategy so all access tokens die immediately
+- [ ] Add `GET /auth/sessions` and `DELETE /auth/sessions/:id`
+- [ ] Extend the Terminus health indicator to report cache loss as degraded
+      rather than down
 
-Expected routes:
-```text
-GET /admin/dashboard
-```
+Implementation note: a stale cache entry is an authorization bug, not a
+performance bug. That is why invalidation lives in a subscriber, why TTLs stay
+short, and why the integration test mutates a user and re-reads immediately.
 
+Expected outcome:
+
+- An authenticated request costs one Redis read instead of one or more
+  Postgres queries.
+- A role change or a remote logout takes effect on the next request.
+- A Redis outage costs latency, not availability.
 
 Expected commit:
+
 ```text
-feat: add admin module foundation
+perf: serve authentication and authorization from cache
 ```
 
 ---
 
-## Phase 6: API Documentation
+## Phase 18: Notifications
 
-Status: Done
+Status: Pending
 
 Goal:
 
-Add Swagger API documentation.
+Send operational and user-facing notifications to Telegram, Slack and other
+channels, without adding a dependency for any of them.
 
 Tasks:
 
-- [x] Add Swagger config
-- [x] Add Swagger setup in `core/swagger`
-- [x] Add auth bearer documentation
-- [x] Add tags for Auth, Users, Admin
-- [x] Expose docs route
+- [ ] Create `src/modules/notification` with `notification.service.ts`
+- [ ] Define `NotificationChannel { name, isEnabled(), send(n) }`
+- [ ] Implement `telegram.channel.ts` over raw HTTPS, no package
+- [ ] Implement `slack.channel.ts` over an incoming webhook, no package, with
+      Block Kit payloads
+- [ ] Implement `discord.channel.ts` on the same webhook shape
+- [ ] Implement `email.channel.ts` delegating to `MailService`
+- [ ] Implement `console.channel.ts` as the development default
+- [ ] Add a per-channel enable flag, retry policy and dead-letter list
+- [ ] Make `notify()` asynchronous and failure-isolated; a broken webhook must
+      never fail a registration
+- [ ] Add `notification_preferences` so a user can opt out per event and
+      channel
+- [ ] Add `GET /notifications/preferences` and `PATCH /notifications/preferences`
+- [ ] Add the `notification_log` entity, purged by Phase 16
+- [ ] Centralise MarkdownV2 escaping in one helper; Telegram rejects messages
+      containing unescaped `_`, `*` and backticks
+- [ ] Support Telegram topic/thread ids to route event types to different rooms
+- [ ] Emit these events: user registered, user deleted, repeated failed logins,
+      new device login, 2FA enabled or disabled, retention job anomaly
 
-Expected route:
-```text
-GET /docs
-```
+Implementation note: the channel interface is the whole extension story. A
+third party adds a channel by providing one class; the core is not modified.
+
+Expected outcome:
+
+- Registration triggers a notification on every enabled channel.
+- Disabling a channel is a config flag, and a failing channel never blocks the
+  request.
 
 Expected commit:
+
 ```text
-feat: add swagger documentation foundation
+feat: add multi-channel notifications
 ```
 
 ---
 
-## Phase 7: Refresh Tokens
+## Phase 19: Account Security Features
 
-Status: Done
+Status: Pending
 
 Goal:
 
-Add refresh token support.
+Close the account-lifecycle gaps that real deployments get asked about.
 
 Tasks:
 
-- [x] Add refresh token entity
-- [x] Add refresh token DTO
-- [x] Add refresh token rotation
-- [x] Add logout
-- [x] Add logout all devices
-- [x] Store token metadata
-- [x] Revoke old refresh tokens
+- [ ] Add an email verification gate, blocking sensitive actions until the
+      address is verified
+- [ ] Add a password policy in zod, with an optional `zxcvbn` strength score
+- [ ] Check new passwords against a breach list using the k-anonymity API, or
+      an offline list
+- [ ] Keep the last N password hashes and reject reuse
+- [ ] Add an account lockout after N failed attempts, with an unlock flow and
+      a notification
+- [ ] Add an audit log entity: actor, action, before/after diff, ip, user
+      agent, request id, append-only
+- [ ] Record an audit entry on every privileged action, through an interceptor
+      plus a TypeORM subscriber for writes that bypass a controller
+- [ ] Add an `Idempotency-Key` header guard on mutating endpoints, so a client
+      retry after a timeout cannot create a duplicate
+- [ ] Add `@VersionColumn()` to the mutable entities for optimistic concurrency
+- [ ] Add `user.requestDeletion()`: soft delete, queue a data export, hard
+      delete at the end of the retention window, a right-to-erasure flow built
+      on Phase 16
+- [ ] Add a data export endpoint, CSV and JSON, streamed for large result sets
 
-Expected routes:
-```text
-POST /auth/refresh-token 
-POST /auth/logout 
-POST /auth/logout-all
-```
+Expected outcome:
+
+- Insecure passwords, unverified addresses and repeated attacks are all visible
+  and handled.
+- Every privileged action is attributable to a person and a request.
 
 Expected commit:
+
 ```text
-feat: add refresh token authentication
+feat: add account security, audit log and idempotency
 ```
 
 ---
 
-## Phase 8: Device Authentication
+## Phase 20: Operational Hardening
 
-Status: Done
+Status: Pending
 
 Goal:
 
-Track authenticated devices.
+Make the new features observable and operable, so a failure at 3am is a
+dashboard, not an investigation.
 
 Tasks:
 
-- [x] Add user device entity
-- [x] Store device info during login
-- [x] List devices
-- [x] Revoke device
-- [x] Attach refresh tokens to devices
+- [ ] Extend `/health` with mail transport, queue connectivity and backlog
+      depth, all reporting degraded rather than down
+- [ ] Expose the last successful maintenance run in the health payload
+- [ ] Add Prometheus metrics: `mail_sent_total`, `mail_failures_total`,
+      `notification_sent_total`, `job_lag_seconds`,
+      `retention_rows_deleted_total`
+- [ ] Add OpenTelemetry traces spanning HTTP, database and job execution
+- [ ] Propagate `X-Request-Id` into every log line, mail record and
+      notification record
+- [ ] Add Sentry error reporting with release tagging
+- [ ] Add alert rules: failure rate above a threshold, a non-empty dead-letter
+      list, a maintenance job that has not run in 26 hours
+- [ ] Redact token, secret and OTP fields in the logger
+- [ ] Add a runbook in `docs/`: provider outage, Redis loss, queue backlog, and
+      tracing a missing email through `mail_logs`
+- [ ] Add a Grafana dashboard for auth failure rate, job lag and mail delivery
 
-Expected routes:
+Expected outcome:
 
-```text
-GET /auth/devices 
-DELETE /auth/devices/:id
-```
+- Each new subsystem is visible before it is asked about.
+- The runbook answers the common failure questions without reading code.
 
 Expected commit:
 
 ```text
-feat: add device authentication foundation
+feat: add observability and operations for the new subsystems
 ```
 
 ---
-## Phase 9: Two-Factor Authentication
 
-Status: Done
+## Phase 21: Testing Depth and Documentation
+
+Status: Pending
 
 Goal:
 
-Add optional 2FA support.
+Prove the new behaviour, especially the optional-dependency and cache paths,
+which are the ones that fail quietly.
 
 Tasks:
 
-- [x] Add 2FA secret storage
-- [x] Add 2FA setup endpoint
-- [x] Add 2FA verify endpoint
-- [x] Add 2FA login flow
-- [x] Add recovery code support if needed
+- [ ] Add unit tests for every new service and template
+- [ ] Add an integration test that boots the app with an empty
+      `optionalDependencies` and asserts every feature degrades cleanly
+- [ ] Add a cache test that mutates a user and re-reads immediately, asserting
+      invalidation happened rather than trusting the TTL
+- [ ] Add a retention test with a dry run, asserting nothing is deleted
+- [ ] Add `testcontainers` for real Postgres and Redis in e2e
+- [ ] Run the e2e suite in CI against service containers, it currently only
+      type checks
+- [ ] Add a k6 or Artillery smoke test for login, register and refresh
+- [ ] Add mutation testing on the auth and retention paths, where a silent
+      logic error is expensive
+- [ ] Write `src/modules/mail/README.md`, `src/modules/queue/README.md`,
+      `src/modules/notification/README.md`, `src/modules/maintenance/README.md`
+- [ ] Update `docs/production.md` and the root `README.md` with the new
+      environment variables and the module list
 
-Expected routes:
+Expected outcome:
 
-```text
-POST /auth/2fa/setup 
-POST /auth/2fa/verify 
-POST /auth/2fa/disable
-```
+- A regression in cache invalidation or optional loading fails CI.
+- Every new module is documented next to its code, in the same commit.
 
 Expected commit:
 
 ```text
-feat: add two-factor authentication foundation
+test: cover optional dependencies, cache invalidation and retention
 ```
-
-
-- TOTP via `otpauth`, QR codes via `qrcode`.
-- The shared secret is never stored in the clear. It is encrypted with
-  AES-256-GCM using `TWO_FACTOR_ENCRYPTION_KEY`, and the auth tag is verified on
-  read so tampered rows fail loudly. Rotating the key invalidates every stored
-  secret.
-- `POST /auth/2fa/setup` issues a secret but does not activate 2FA.
-  `POST /auth/2fa/verify` confirms it with a code and only then enables 2FA and
-  returns the recovery codes, which are shown once.
-- Recovery codes are Crockford style base32, stored as salted hashes and removed
-  from the list as they are spent, so the array doubles as the set still usable.
-- `POST /auth/login` returns HTTP 200 with a short lived challenge token instead
-  of tokens when 2FA is on. `POST /auth/2fa/login` exchanges the challenge plus
-  a TOTP code or a recovery code for the token pair.
-- TOTP steps are single use. The last accepted counter is persisted, so replaying
-  a code inside its own 30 second window is rejected.
-
-- Setting `TWO_FACTOR_ENABLED=false` turns the feature off globally, and login
-  falls back to the single factor flow.
-
----
-## Phase 10: Cache and Performance
-
-Status: Done
-
-Goal:
-
-Add Redis cache foundation.
-
-Tasks:
-
-- [x] Add Redis config
-- [x] Add cache module
-- [x] Add cache service abstraction
-- [x] Add cache key constants
-- [x] Add cache decorators/helpers if needed
-
-Expected commit:
-```text
-feat: add redis cache foundation
-```
-
----
-
-## Phase 11: Production Hardening
-
-Status: Done
-
-Goal:
-
-Prepare the boilerplate for production usage.
-
-Tasks:
-
-- [x] Add rate limiting
-- [x] Add security headers
-- [x] Add CORS config
-- [x] Add request id
-- [x] Add structured logging
-- [x] Add health check
-- [x] Add graceful shutdown
-- [x] Add environment validation
-- [x] Add seed command
-- [x] Add migration command
-- [x] Add CI workflow
-- [x] Add Dockerfile
-- [x] Add docker-compose for local development
-
-Expected commit:
-```text
-chore: add production hardening foundation
-```
-
----
-
-## Current Execution Rule
-
-All planned phases are implemented. Follow-up work is tracked as new phases
-below, one at a time, in the same way.
-
-Before starting a phase:
-
-1. Review this plan.
-2. Confirm the target phase.
-3. Implement only the required files.
-4. Run lint/typecheck/test when applicable.
-5. Commit the phase separately.
 
 ---
 
@@ -636,33 +542,66 @@ Before starting a phase:
 
 Not scheduled. Each needs a decision before it becomes a phase.
 
-- A shared throttler store, so rate limits are global across replicas rather than
-  per instance.
-- Pagination on the admin and user listing routes, which currently return
-  everything they match.
-- A permission check that is more than the placeholder in `PermissionsGuard`.
-- CI that also runs the e2e suite against Postgres and Valkey service containers.
-  It type checks now, but it still needs a database to run against.
-- Restricting `GET /users/:id` to the record's owner or an admin. It is currently
+- File uploads to S3-compatible storage, with presigned URLs, content-type
+  validation and a virus scan hook.
+- Feature flags and remote config, Redis-backed, evaluated server-side.
+- Completing the admin module: pagination, filtering, force logout, impersonation
+  with an audit trail, and a role editor.
+- API deprecation headers, `Sunset` and per-version throttles, on top of the
+  existing `/api/v1` prefix.
+- Multi-tenancy, an optional `tenantId` plus a global scope. Only worth it for a
+  SaaS product, so it is deliberately last.
+- Pagination on the admin and user listing routes, which still return everything
+  they match.
+- A shared throttler store, so rate limits are global across replicas.
+- Restricting `GET /users/:id` to the record's owner or an admin. It is still
   readable by any authenticated user, which is recorded as an open decision in
-  `src/modules/users/README.md` rather than left implicit.
+  `src/modules/users/README.md`.
 
+---
+
+## Current Execution Rule
+
+One phase at a time, in the order below.
+
+Before starting a phase:
+
+1. Review this plan.
+2. Confirm the target phase.
+3. Implement only the required files.
+4. Run `npm run check` when applicable.
+5. Commit the phase separately.
+
+The order is not arbitrary. Mail without a queue blocks requests. Retention
+without a queue either runs inside a request or does not run at all. The cache
+work is independent but is the highest-risk change to existing behaviour, so it
+lands after the harness in Phase 12 is solid.
 
 ---
 
 ## Progress Tracking
 
-| Phase | Name | Status |
-| --- | --- | --- |
-| Phase 0 | Project Architecture Skeleton | Done |
-| Phase 1 | Base Application Foundation | Done |
-| Phase 2 | Users Module | Done |
-| Phase 3 | Auth Module - Basic JWT | Done |
-| Phase 4 | Authorization - RBAC and Manager Scope | Done |
-| Phase 5 | Admin Module Foundation | Done |
-| Phase 6 | API Documentation | Done |
-| Phase 7 | Refresh Tokens | Done |
-| Phase 8 | Device Authentication | Done |
-| Phase 9 | Two-Factor Authentication | Done |
-| Phase 10 | Cache and Performance | Done |
-| Phase 11 | Production Hardening | Done |
+| Phase    | Name                                           | Status  |
+| -------- | ---------------------------------------------- | ------- |
+| Phase 0  | Project Architecture Skeleton                  | Done    |
+| Phase 1  | Base Application Foundation                    | Done    |
+| Phase 2  | Users Module                                   | Done    |
+| Phase 3  | Auth Module - Basic JWT                        | Done    |
+| Phase 4  | Authorization - RBAC and Manager Scope         | Done    |
+| Phase 5  | Admin Module Foundation                        | Done    |
+| Phase 6  | API Documentation                              | Done    |
+| Phase 7  | Refresh Tokens                                 | Done    |
+| Phase 8  | Device Authentication                          | Done    |
+| Phase 9  | Two-Factor Authentication                      | Done    |
+| Phase 10 | Cache and Performance                          | Done    |
+| Phase 11 | Production Hardening                           | Done    |
+| Phase 12 | Optional Integration Foundation                | Done    |
+| Phase 13 | Configuration Expansion                        | Pending |
+| Phase 14 | Outbound Email                                 | Pending |
+| Phase 15 | Background Job Queue                           | Pending |
+| Phase 16 | Data Retention and Cleanup                     | Pending |
+| Phase 17 | Authentication and Authorization through Cache | Pending |
+| Phase 18 | Notifications                                  | Pending |
+| Phase 19 | Account Security Features                      | Pending |
+| Phase 20 | Operational Hardening                          | Pending |
+| Phase 21 | Testing Depth and Documentation                | Pending |
