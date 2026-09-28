@@ -8,6 +8,7 @@ core
 ├── cache/      Redis/Valkey/memory cache
 ├── health/     liveness, readiness, shutdown state
 ├── logger/     JSON logs for production
+├── optional/   optional package loading and the package-free transports
 └── swagger/    OpenAPI setup
 ```
 
@@ -25,12 +26,12 @@ core
 Two hardening concerns are configured but not folders here, because they are one
 call each rather than a module worth a directory:
 
-| Concern | Where |
-| --- | --- |
-| Security headers | `helmet` in `src/main.ts`, values from `src/configs/security.config.ts` |
-| CORS | `app.enableCors` in `src/main.ts`, values from `src/configs/cors.config.ts` |
-| Rate limiting | `ThrottlerModule` in `src/app.module.ts`, values from `src/configs/throttler.config.ts` |
-| Request id | `src/common/middlewares`, applied in `src/app.module.ts` |
+| Concern          | Where                                                                                   |
+| ---------------- | --------------------------------------------------------------------------------------- |
+| Security headers | `helmet` in `src/main.ts`, values from `src/configs/security.config.ts`                 |
+| CORS             | `app.enableCors` in `src/main.ts`, values from `src/configs/cors.config.ts`             |
+| Rate limiting    | `ThrottlerModule` in `src/app.module.ts`, values from `src/configs/throttler.config.ts` |
+| Request id       | `src/common/middlewares`, applied in `src/app.module.ts`                                |
 
 See `docs/production.md` for what each one does and the tradeoffs behind the
 defaults.
