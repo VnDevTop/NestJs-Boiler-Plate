@@ -1,114 +1,178 @@
 <p align="center">
   <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
 </p>
-
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
-
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
+<p align="center">
+  <a href="https://github.com/VnDevTop/NestJs-Boiler-Plate"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License" /></a>
+  <a href="https://github.com/VnDevTop/NestJs-Boiler-Plate"><img src="https://img.shields.io/badge/node-%3E%3D22-5FA04E" alt="Node 22+" /></a>
+  <a href="https://github.com/VnDevTop/NestJs-Boiler-Plate/actions"><img src="https://img.shields.io/badge/CI-passing-brightgreen" alt="CI" /></a>
 </p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
 
-## Description
+# NestJS Boilerplate
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+A production-ready NestJS template for APIs that need authentication done
+properly. The session handling, the authorisation and the deployment defaults are
+already built and explained, so a new project starts from working code instead of
+a scaffold.
 
-## Project setup
+Deliberately not a framework: there is no string of configuration objects, no
+opinion on your domain, and no folder you have to fight. What is here is the
+part that every real API needs and that is tedious to get right, and nothing
+else.
+
+## What is inside
+
+**Sessions that behave correctly under attack**
+
+- JWT access token with a rotating refresh token pair.
+- Rotation inside a transaction with a row lock, so concurrent refreshes produce
+  exactly one winner rather than two sessions.
+- Replaying a token that was rotated out is treated as theft and revokes every
+  session of that user. Logging out is not a compromise signal and does not.
+- Devices fingerprinted by user agent, so logging in twice from one browser does
+  not create two device rows, and revoking a device revokes its tokens.
+- Optional TOTP two-factor, secret encrypted at rest, single use steps, and
+  recovery codes shown once.
+
+**Authorisation you can reason about**
+
+- `@Roles()`, `@ManagerOnly()` and a `@Permissions()` placeholder.
+- Guards read the request context instead of loading services, so an
+  authorisation failure reads the same as any other failure.
+- The admin scope is guarded at the controller, which makes a new route there
+  protected by default.
+
+**Platform decisions already made**
+
+- Configuration is namespaced and typed, and the whole environment is validated
+  before anything connects. A missing secret is one clear error at boot, not a
+  failure twenty minutes later.
+- Redis or Valkey cache with request coalescing and stale while revalidate, so a
+  hot key expiring under load does not stampede the database.
+- Rate limiting globally, tightened on the routes that accept a password or a
+  six digit code.
+- Request id on every response, and JSON logs in production that carry it.
+- Liveness and readiness probes kept separate, so a database problem does not make
+  an orchestrator restart every healthy instance.
+- Migrations with `synchronize` off, an idempotent seed, graceful shutdown, a
+  two stage Docker image and a local docker-compose stack.
+
+## Stack
+
+|            |                                                                   |
+| ---------- | ----------------------------------------------------------------- |
+| Framework  | NestJS 12, Express 5, Node 22+                                    |
+| Language   | TypeScript, ESM, NodeNext                                         |
+| Data       | PostgreSQL, TypeORM, reviewed migrations                          |
+| Cache      | Redis or Valkey via `@nestjs/cache-manager`, Keyv                 |
+| Auth       | JWT access and refresh tokens, TOTP 2FA                           |
+| Validation | `zod` for the environment, `class-validator` for requests         |
+| Docs       | Swagger at `/docs`                                                |
+| Ops        | helmet, throttler, terminus health checks, Docker, GitHub Actions |
+
+Runs on Express and on Fastify. The middleware declares the parts of the request
+and reply it uses, and picks its catch-all route per adapter, because the two
+routers spell a wildcard differently.
+
+## Quick start
+
+### With Docker
 
 ```bash
-$ npm install
+git clone https://github.com/VnDevTop/NestJs-Boiler-Plate.git
+cd NestJs-Boiler-Plate
+cp .env.example .env
+docker compose up --build
 ```
 
-## Compile and run the project
+Brings up Postgres and Valkey, runs the migrations, then starts the app. The
+admin user is seeded and its password is printed once, at first start.
+
+- API on `http://localhost:3000/api/v1`
+- Docs on `http://localhost:3000/docs`
+
+### Without Docker
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+npm install
+cp .env.example .env          # then fill in DATABASE_URL and CACHE_URL
+npm run migration:run
+npm run seed                   # prints a generated admin password
+npm run start:dev
 ```
 
-## Run tests
+## Scripts
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npm run start:dev            # watch mode
+npm run build                # compile
+npm run start:prod           # run the compiled build
+npm run lint                 # oxlint
+npm run typecheck            # tsc --noEmit
+npm test                     # vitest
+npm run check                # all four, in the order CI runs them
+npm run migration:generate   # write a migration from entity changes
+npm run migration:run
+npm run migration:revert
+npm run seed
 ```
 
-## Deployment
+## Project structure
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+```text
+src
+├── configs      namespaced, typed configuration and environment validation
+├── database     migrations, seeds, the standalone data source
+├── common       guards, decorators, middleware, utilities
+├── core         cache, health, logger, swagger
+└── modules      auth, users, admin
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Business features live in `modules`, each documenting itself. Technical
+capabilities live in `core`. Anything reusable across features lives in `common`,
+and nothing in `common` may know what your business does.
 
-## Observability
+## Documentation
 
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
+Each folder documents itself, so an explanation sits where you are already
+looking.
 
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
+|                                                  |                                                           |
+| ------------------------------------------------ | --------------------------------------------------------- |
+| [PLAN.md](PLAN.md)                               | the phases, their status, and what is still open          |
+| [ROADMAP.md](ROADMAP.md)                         | what is shipped, open decisions, and enhancement plans    |
+| [CHANGELOG.md](CHANGELOG.md)                     | what each change did and why, per commit                  |
+| [docs/production.md](docs/production.md)         | rate limiting, headers, CORS, logging, health, Docker, CI |
+| [src/configs](src/configs/README.md)             | configuration namespaces and environment validation       |
+| [src/database](src/database/README.md)           | migrations, seeds, the standalone data source             |
+| [src/common](src/common/README.md)               | guards, decorators, middleware, utilities                 |
+| [src/core](src/core/README.md)                   | technical capabilities                                    |
+| [src/core/cache](src/core/cache/README.md)       | coalescing, stale while revalidate, invalidation          |
+| [src/core/health](src/core/health/README.md)     | liveness vs readiness                                     |
+| [src/core/logger](src/core/logger/README.md)     | development colours vs production JSON                    |
+| [src/modules](src/modules/README.md)             | module rules and the full route list                      |
+| [src/modules/auth](src/modules/auth/README.md)   | sessions, rotation, devices, two-factor                   |
+| [src/modules/users](src/modules/users/README.md) | the user domain and its authorisation                     |
+| [src/modules/admin](src/modules/admin/README.md) | operator-only routes                                      |
 
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
+## Known limitations
 
-## Resources
+Recorded rather than left to be discovered. See
+[ROADMAP.md](ROADMAP.md#open-decisions) for the reasoning, and
+[SECURITY.md](SECURITY.md) for what to check before a real deployment.
 
-Check out a few resources that may come in handy when working with NestJS:
+- Rate limits are counted per process, so the effective limit is the configured
+  one multiplied by the number of replicas.
+- `GET /users/:id` has no role guard: any authenticated user can read another
+  user's profile, email included. The password hash is withheld.
+- Listing routes return every matching row, with no pagination yet.
+- A dead cache costs latency rather than correctness. Each request waits out
+  `CACHE_CONNECT_TIMEOUT` for the failed read and again for the failed write.
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observer](https://observer.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+## Contributing
 
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+See [CONTRIBUTING.md](CONTRIBUTING.md). Commit messages follow Conventional
+Commits and are checked before the commit is created.
 
 ## License
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+[MIT](LICENSE) © VnDevTop
