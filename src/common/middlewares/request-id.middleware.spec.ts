@@ -70,9 +70,12 @@ async function boot(
   useFastify: boolean,
   logger: LoggerService | false = false,
 ) {
-  const app = await NestFactory.create(ProbeModule, {
-    adapter: useFastify ? new FastifyAdapter() : undefined,
-  });
+  // Built per branch rather than with a conditional property, because the two
+  // forms of NestFactory.create have different overloads and a union of the
+  // options matches neither.
+  const app = useFastify
+    ? await NestFactory.create(ProbeModule, new FastifyAdapter())
+    : await NestFactory.create(ProbeModule);
 
   app.useLogger(logger);
   await app.listen(0, '127.0.0.1');
