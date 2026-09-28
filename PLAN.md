@@ -78,13 +78,16 @@ Responsibilities:
 
 This layer should not contain business logic.
 
-Examples:
+Contains:
 
 - `migrations`
 - `seeds`
 - `factories`
-- `entities/base.entity.ts`
 - `subscribers`
+- `data-source.ts`, the standalone DataSource the TypeORM CLI needs
+
+A shared `entities/base.entity.ts` is not created: the feature entities own
+their own columns, and an abstraction over four columns is not yet one.
 
 ---
 
@@ -176,6 +179,33 @@ Rules:
 - Business logic should live in services.
 - Modules should avoid circular dependencies.
 - Feature-specific code should stay inside its own module.
+
+---
+
+## Documentation
+
+This plan tracks **what was built and when**. How anything works is documented
+next to the code, so the explanation lives where someone looking for it will be.
+
+```text
+docs/production.md           rate limiting, headers, CORS, logging, health, Docker, CI
+
+src/configs/README.md        config namespaces and environment validation
+src/database/README.md       migrations, seeds, the standalone data source
+src/common/README.md         guards, decorators, middleware, utilities
+src/core/README.md           technical capabilities
+src/core/cache/README.md     caching, coalescing, stale while revalidate, invalidation
+src/core/health/README.md    liveness vs readiness, the shutdown flag
+src/core/logger/README.md    dev colours vs production JSON
+src/core/swagger/README.md   OpenAPI setup
+src/modules/README.md        the module rules and the full route list
+src/modules/auth/README.md   sessions, rotation, devices, two-factor, rate limits
+src/modules/users/README.md  the user domain and its authorisation
+src/modules/admin/README.md  operator-only routes
+```
+
+A change to behaviour should update the README in the same commit as the code.
+A plan entry saying something is done is not documentation of how it works.
 
 ---
 
@@ -450,25 +480,6 @@ Expected commit:
 feat: add refresh token authentication
 ```
 
-Implementation notes:
-
-```text
-src/modules/auth/entities/refresh-token.entity.ts
-src/modules/auth/enums/refresh-token-revoked-reason.enum.ts
-src/modules/auth/refresh-token.service.ts
-src/modules/auth/dto/refresh-token.dto.ts
-src/modules/auth/dto/logout.dto.ts
-src/modules/auth/types/refresh-token-payload.interface.ts
-src/modules/auth/types/token-metadata.interface.ts
-```
-
-- Every login, register and refresh call stores one `refresh_tokens` row.
-- Rotation happens inside a database transaction with a pessimistic row lock, so
-  concurrent refreshes of the same token produce exactly one winner.
-- The rotated-out token keeps a `replacedById` pointer, which forms the rotation chain.
-- Replaying a token that was revoked by rotation is treated as theft: all sessions
-  of that user are revoked. Tokens revoked by an explicit logout are not a
-  compromise signal and do not trigger the sweep.
 ---
 
 ## Phase 8: Device Authentication
@@ -499,33 +510,6 @@ Expected commit:
 ```text
 feat: add device authentication foundation
 ```
-
-Implementation notes:
-
-```text
-src/modules/auth/entities/user-device.entity.ts
-src/modules/auth/device.service.ts
-src/modules/auth/dto/user-device.dto.ts
-src/modules/auth/types/device-metadata.interface.ts
-```
-
-- Devices are fingerprinted by user agent, so repeated logins from the same
-  browser or app reuse a single `user_devices` row instead of creating duplicates.
-  Logging in again from a revoked device reactivates it instead of failing.
-- Each `refresh_tokens` row carries a `deviceId`. Rotation keeps the token on its
-  original device, so a session can never hop between devices while refreshing.
-- `DELETE /auth/devices/:id` deactivates the device and revokes every refresh
-  token attached to it (`device_revoked`).
-- `logout-all` revokes all refresh tokens and deactivates all devices.
-- The friendly device name is derived from the `user-agent` header by the
-  `@DeviceName()` decorator, so clients never have to send anything. An explicit
-  `x-device-name` header overrides it when a caller wants something friendlier
-  than "Chrome on macOS". Both sources are untrusted, so the decorator trims the
-  value, collapses whitespace and caps it at the column width.
-- `parseUserAgent()` in `common/utils/user-agent.util.ts` is a dependency free
-  best effort parser. It recognises the common browsers, the common operating
-  systems, Android build models and API clients. Swap it for `ua-parser-js` if
-  exhaustive coverage matters more than staying dependency free.
 
 ---
 ## Phase 9: Two-Factor Authentication
@@ -558,17 +542,6 @@ Expected commit:
 feat: add two-factor authentication foundation
 ```
 
-Implementation notes:
-
-```text
-src/modules/auth/entities/two-factor-secret.entity.ts
-src/modules/auth/two-factor.service.ts
-src/modules/auth/dto/two-factor-*.dto.ts
-src/modules/auth/types/two-factor*.ts
-src/common/utils/encryption.util.ts
-src/common/utils/recovery-code.util.ts
-src/configs/two-factor.config.ts
-```
 
 - TOTP via `otpauth`, QR codes via `qrcode`.
 - The shared secret is never stored in the clear. It is encrypted with
@@ -585,8 +558,7 @@ src/configs/two-factor.config.ts
   a TOTP code or a recovery code for the token pair.
 - TOTP steps are single use. The last accepted counter is persisted, so replaying
   a code inside its own 30 second window is rejected.
-- Five invalid attempts locks verification for 15 minutes. Rate limiting on the
-  routes themselves is still tracked in Phase 11.
+
 - Setting `TWO_FACTOR_ENABLED=false` turns the feature off globally, and login
   falls back to the single factor flow.
 
@@ -611,62 +583,6 @@ Expected commit:
 ```text
 feat: add redis cache foundation
 ```
-
-Implementation notes:
-
-```text
-src/configs/cache.config.ts
-src/core/cache/cache.module.ts
-src/core/cache/cache.service.ts
-src/core/cache/cache-keys.ts
-src/core/cache/cache.service.spec.ts
-```
-
-- Uses `@nestjs/cache-manager` with Keyv, and `@keyv/redis` for Redis and
-  Valkey. Both talk the same protocol, so only `backend` differs between them.
-- `CACHE_URL` is the whole connection configuration, including credentials, TLS
-  and database, which is what the Redis client takes anyway.
-- Exactly one store. `CACHE_BACKEND=memory` is an explicit choice for local
-  development, never a silent fallback, so a configured but unreachable cache
-  fails the boot instead of quietly serving per-instance data.
-  The two store layout that `@nestjs/cache-manager` documents was rejected after
-  measurement: memory first means the shared store is written but never read,
-  and Redis first with a memory fallback resurrects values that were just
-  deleted, because the delete only reached the shared store.
-- An unreachable cache fails the boot, through a `store.get('__startup__')` probe
-  with `throwOnErrors` on, since a Keyv store connects lazily and the app would
-  otherwise start and fail on the first request. Errors are switched off after
-  the probe so a later outage is a miss rather than a 500.
-- `CacheService.wrap()` is the miss handler and the failover back to the
-  database. It delegates to cache-manager, which already supplies request
-  coalescing and stale while revalidate, so neither is reimplemented here.
-  Measured on Valkey: 300 concurrent requests on one hot key cause 1 loader call;
-  a read inside the refresh threshold returns in 80ms while the loader takes
-  200ms, and the refreshed value appears afterwards.
-- Nullish results are cached for `CACHE_EMPTY_TTL` rather than the full TTL, so
-  repeated lookups of something missing stop hammering the loader while a record
-  created afterwards still appears quickly. This does not help a client
-  enumerating many different missing ids, since each is a separate key; rate
-  limiting in Phase 11 is the tool for that.
-- Expirations carry a 10% jitter, so a bulk write does not put every entry on
-  the same deadline and expire them in one burst.
-- `disableOfflineQueue` is set on the client, so a command issued while the
-  socket is reconnecting reports a miss instead of waiting for the outage to end.
-  It does not remove the cost of a dead cache: the store re-attempts the
-  connection on every operation, and each attempt waits out
-  `CACHE_CONNECT_TIMEOUT`. Measured against an unreachable cache with the
-  default 2000ms, one request costs 4003ms, because the read misses and the
-  write back fails. Concurrent requests for the same key still share a single
-  loader run, so the outage costs latency rather than correctness, and
-  `CACHE_CONNECT_TIMEOUT` is the knob for that latency.
-- Invalidation is by explicit key only. There is no `deleteByPattern` and no
-  decorator based invalidation, because scanning a keyspace is unbounded on a
-  shared server and a broad pattern fails silently.
-- There is no `isHealthy()`. cache-manager reports a failing store as a miss, so
-  a check built on it would always report healthy. The health endpoint is
-  Phase 11, where it can ping the server directly.
-- Authentication state is not cached, so a role change or a deactivation takes
-  effect on the next request instead of after a TTL.
 
 ---
 
@@ -699,67 +615,6 @@ Expected commit:
 chore: add production hardening foundation
 ```
 
-Implementation notes:
-
-```text
-src/configs/security.config.ts
-src/configs/cors.config.ts
-src/configs/throttler.config.ts
-src/configs/env.validation.ts
-src/common/middlewares/request-id.middleware.ts
-src/common/utils/request-id.util.ts
-src/core/logger/app.logger.ts
-src/core/health/health.module.ts
-src/core/health/cache.health.ts
-src/core/health/shutdown.service.ts
-src/database/data-source.ts
-src/database/seed.ts
-src/database/seeds/
-src/database/migrations/
-docs/production.md
-```
-
-- Rate limiting is a global `ThrottlerGuard`, so a new endpoint is limited from
-  the moment it exists. The credential routes override it with `@Throttle`,
-  because 100 per minute is no defence at all for a route that accepts a
-  password: login is 5 per minute, the TOTP routes 5 per 5 minutes, since a six
-  digit code is 1 in a million. Counters are in process memory, so with several
-  replicas the limit is per replica. Sharing them means a shared throttler store,
-  which is left as a deliberate change rather than made a default.
-- CORS defaults to same-origin only and `credentials` to false, since this API
-  authenticates with a bearer token rather than a cookie. Validation rejects
-  `CORS_CREDENTIALS=true` together with a wildcard, because browsers refuse that
-  pairing anyway and a config that only appears to work is worse than one that
-  fails.
-- A request id is reused from the client only when it is 8 to 64 characters of a
-  restricted charset. A newline in that value would let a caller forge or split
-  log entries, so it is discarded and replaced. The id lives in an
-  `AsyncLocalStorage`, so logs from deep inside a service correlate without the
-  call site knowing about requests.
-- Logging is one JSON object per line in production, with the request id included
-  when there is one. Newlines inside a message are collapsed, so a stack trace
-  cannot be read as several entries.
-- Health checks are split into liveness and readiness. Liveness touches nothing
-  external, because a failing liveness probe makes an orchestrator restart every
-  healthy instance at the exact moment a dependency is down. Readiness checks the
-  database and the cache, and reports not ready once shutdown has started.
-- The cache health check writes a random value and reads it back. A plain read
-  would report healthy on a dead cache, which is the same trap that made
-  `CacheService.isHealthy()` impossible in Phase 10.
-- Environment validation reports every problem at once. It is strict in
-  production, where a secret that still holds the `.env.example` value counts as
-  unset, and lenient in development so a placeholder does not block local work.
-- `synchronize` is off and schema changes go through reviewed migrations.
-  Entities are listed explicitly in the standalone data source, since
-  `autoLoadEntities` only works inside the Nest container and a migration that
-  missed an entity would silently generate an incomplete schema.
-- The seed creates one admin and is idempotent. It refuses to invent a password:
-  `ADMIN_PASSWORD` is required and must be long, because an account seeded with a
-  published password is a published account.
-- The Docker image is a two stage build running as the `node` user, and its
-  healthcheck uses the liveness endpoint so a database problem cannot get the
-  container restarted.
-
 ---
 
 ## Current Execution Rule
@@ -786,9 +641,12 @@ Not scheduled. Each needs a decision before it becomes a phase.
 - Pagination on the admin and user listing routes, which currently return
   everything they match.
 - A permission check that is more than the placeholder in `PermissionsGuard`.
-- CI that also runs the e2e suite against a Postgres and Valkey service
-  container, which `test/app.e2e-spec.ts` still cannot run because
-  `supertest/types` is unresolvable.
+- CI that also runs the e2e suite against Postgres and Valkey service containers.
+  It type checks now, but it still needs a database to run against.
+- Restricting `GET /users/:id` to the record's owner or an admin. It is currently
+  readable by any authenticated user, which is recorded as an open decision in
+  `src/modules/users/README.md` rather than left implicit.
+
 
 ---
 

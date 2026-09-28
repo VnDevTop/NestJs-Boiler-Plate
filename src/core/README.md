@@ -1,64 +1,44 @@
 # Core Layer
 
-The `core` layer contains application-level technical modules.
+Technical capabilities the whole application needs, kept out of the business
+modules so nothing here has to know what the product does.
 
-## Purpose
-
-This layer groups technical capabilities that are used by the whole application.
-
-Examples:
-
-- Cache module
-- Logger module
-- Swagger setup
-- Health check
-- Security setup
-- Rate limit setup
-- Global infrastructure providers
+```text
+core
+├── cache/      Redis/Valkey/memory cache
+├── health/     liveness, readiness, shutdown state
+├── logger/     JSON logs for production
+└── swagger/    OpenAPI setup
+```
 
 ## Rules
 
-- `core` can import framework/infrastructure packages.
-- `core` should not contain business domain logic.
-- Business modules should not become tightly coupled to core internals.
-- Prefer exposing clean service abstractions from core modules.
+- Infrastructure only. A cache module, a health probe or a logger has no idea
+  what a user is.
+- Expose a narrow service, not the underlying client. `CacheService` is the
+  whole cache API; nothing else imports the store.
+- Register globally only when the capability genuinely is app wide. Both `cache`
+  and `health` are `@Global`; `logger` and `swagger` are plain helpers.
 
-## Suggested Structure
+## Production concerns that live elsewhere
 
-```text
-core 
-    ├── cache 
-    ├── health 
-    ├── logger 
-    ├── security 
-    ├── swagger 
-    └── README.md
-```
+Two hardening concerns are configured but not folders here, because they are one
+call each rather than a module worth a directory:
 
-## Future Examples
+| Concern | Where |
+| --- | --- |
+| Security headers | `helmet` in `src/main.ts`, values from `src/configs/security.config.ts` |
+| CORS | `app.enableCors` in `src/main.ts`, values from `src/configs/cors.config.ts` |
+| Rate limiting | `ThrottlerModule` in `src/app.module.ts`, values from `src/configs/throttler.config.ts` |
+| Request id | `src/common/middlewares`, applied in `src/app.module.ts` |
 
-Cache:
-```text
-core/cache/cache.module.ts 
-core/cache/cache.service.ts
-```
+See `docs/production.md` for what each one does and the tradeoffs behind the
+defaults.
 
-Logger:
-```text
-core/logger/logger.module.ts 
-core/logger/logger.service.ts
-```
+## Adding a core module
 
-Swagger:
-```text
-core/swagger/swagger.setup.ts
-
-```
-
-Health:
-```text
-core/health/health.controller.ts 
-core/health/health.module.ts
-
-```
-
+1. `src/core/<name>/` with its own `index.ts` and a `README.md`.
+2. Export it from `src/core/index.ts`.
+3. Register it in `src/app.module.ts`.
+4. Add configuration to `src/configs` if it needs any, including the
+   `src/configs/env.validation.ts` rule.
