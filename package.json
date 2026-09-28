@@ -1,10 +1,10 @@
 {
   "name": "nestjs-boiler-plate",
   "version": "0.0.1",
-  "description": "",
-  "author": "",
+  "description": "Production-ready NestJS boilerplate: auth, RBAC, 2FA, cache and the hardening a real deployment needs.",
+  "author": "VnDevTop <hi@vndev.top>",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "build": "nest build",
@@ -24,7 +24,10 @@
     "migration:generate": "npm run build && typeorm migration:generate -d dist/database/data-source.js",
     "migration:run": "npm run build && typeorm migration:run -d dist/database/data-source.js",
     "migration:revert": "npm run build && typeorm migration:revert -d dist/database/data-source.js",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "prepare": "husky",
+    "commitlint": "commitlint --edit",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
     "@keyv/redis": "^5.1.6",
@@ -58,6 +61,8 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.2.3",
+    "@commitlint/config-conventional": "^21.2.3",
     "@nestjs/cli": "^12.0.0",
     "@nestjs/mau": "^0.2.6",
     "@nestjs/platform-fastify": "^12.1.0",
@@ -70,6 +75,8 @@
     "@types/supertest": "^7.0.0",
     "@vitest/coverage-v8": "^4.1.2",
     "fastify": "^5.12.5",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.6.0",
     "oxlint": "^1.58.0",
     "prettier": "^3.4.2",
     "source-map-support": "^0.5.21",
@@ -77,5 +84,38 @@
     "typescript": "^6.0.2",
     "vite-tsconfig-paths": "^5.1.4",
     "vitest": "^4.1.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/VnDevTop/NestJs-Boiler-Plate.git"
+  },
+  "bugs": {
+    "url": "https://github.com/VnDevTop/NestJs-Boiler-Plate/issues"
+  },
+  "homepage": "https://github.com/VnDevTop/NestJs-Boiler-Plate#readme",
+  "keywords": [
+    "nestjs",
+    "boilerplate",
+    "template",
+    "typescript",
+    "redis",
+    "typeorm",
+    "jwt",
+    "rbac",
+    "2fa",
+    "postgresql"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "npm@11.19.0",
+  "lint-staged": {
+    "*.{ts,js,mjs,cjs}": [
+      "prettier --write",
+      "oxlint --fix"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
   }
 }

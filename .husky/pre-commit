@@ -1,0 +1,2 @@
+# Staged files only, so a commit never reformats work that is not part of it.
+npx lint-staged
