@@ -1,4 +1,4 @@
-export * from './https-post.js';
+export * from './json-poster.js';
 export * from './mail-transport.factory.js';
 export * from './mail.interface.js';
 export * from './memory-mail.transport.js';

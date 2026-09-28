@@ -1,60 +1,77 @@
+import { HttpService } from '@nestjs/axios';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { of, throwError } from 'rxjs';
 
-const postJson = vi.hoisted(() => vi.fn());
-
-vi.mock('./https-post.js', () => ({ postJson }));
-
-const { SlackChannel } = await import('./slack.channel.js');
+import { SlackChannel } from './slack.channel.js';
 
 const options = { webhookUrl: 'https://hooks.slack.com/services/T/B/X' };
 
+let http: HttpService;
+
+function stub(status = 200): void {
+  http = {
+    post: vi.fn().mockReturnValue(of({ status, data: 'ok' })),
+  } as unknown as HttpService;
+}
+
+function lastBody() {
+  return vi.mocked(http.post).mock.calls[0][1] as {
+    blocks: { text: { text: string } }[];
+  };
+}
+
 describe('SlackChannel', () => {
-  beforeEach(() => {
-    postJson.mockReset();
-    postJson.mockResolvedValue({ status: 200, body: 'ok' });
-  });
+  beforeEach(() => stub());
 
   it('posts to the incoming webhook url', async () => {
-    const channel = new SlackChannel(options);
+    const channel = new SlackChannel(http, options);
 
     const result = await channel.send({ text: 'user registered' });
 
     expect(result).toEqual({ delivered: true, status: 200 });
-    expect(postJson.mock.calls[0][0].url).toBe(options.webhookUrl);
+    expect(http.post).toHaveBeenCalledWith(
+      options.webhookUrl,
+      expect.any(Object),
+      expect.any(Object),
+    );
   });
 
   it('sends a title block when a title is given', async () => {
-    await new SlackChannel(options).send({
+    await new SlackChannel(http, options).send({
       title: 'User registered',
       text: 'ada@example.com',
     });
 
-    const body = postJson.mock.calls[0][0].body as {
-      blocks: { text: { text: string } }[];
-    };
-
-    expect(body.blocks[0].text.text).toBe('*User registered*');
-    expect(body.blocks[1].text.text).toBe('ada@example.com');
+    expect(lastBody().blocks[0].text.text).toBe('*User registered*');
+    expect(lastBody().blocks[1].text.text).toBe('ada@example.com');
   });
 
   it('omits the title block when there is no title', async () => {
-    await new SlackChannel(options).send({ text: 'plain' });
+    await new SlackChannel(http, options).send({ text: 'plain' });
 
-    const body = postJson.mock.calls[0][0].body as { blocks: unknown[] };
-
-    expect(body.blocks).toHaveLength(1);
+    expect(lastBody().blocks).toHaveLength(1);
   });
 
   it('reports a rejection without throwing', async () => {
-    postJson.mockResolvedValue({ status: 404, body: 'no_service' });
+    stub(404);
 
-    expect(await new SlackChannel(options).send({ text: 'x' })).toEqual({
+    expect(await new SlackChannel(http, options).send({ text: 'x' })).toEqual({
       delivered: false,
       status: 404,
     });
   });
 
+  it('propagates a network failure so the caller can retry', async () => {
+    http = {
+      post: vi.fn().mockReturnValue(throwError(() => new Error('ECONNRESET'))),
+    } as unknown as HttpService;
+
+    await expect(
+      new SlackChannel(http, options).send({ text: 'x' }),
+    ).rejects.toThrow('ECONNRESET');
+  });
+
   it('works as a discord channel on the same payload shape', () => {
-    expect(new SlackChannel(options).name).toBe('slack');
+    expect(new SlackChannel(http, options).name).toBe('slack');
   });
 });

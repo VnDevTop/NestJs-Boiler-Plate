@@ -1,6 +1,7 @@
+import { HttpService } from '@nestjs/axios';
 import { Logger } from '@nestjs/common';
 
-import { postJson } from './https-post.js';
+import { postJson } from './json-poster.js';
 import type {
   WebhookChannel,
   WebhookPayload,
@@ -18,7 +19,7 @@ export interface SlackChannelOptions {
 }
 
 /**
- * Slack incoming webhook over raw HTTPS, no package.
+ * Slack incoming webhook over `HttpService`, no package of its own.
  *
  * The same shape serves Discord, which also accepts a Slack-compatible
  * `{ text }` payload, so the two share one implementation.
@@ -26,10 +27,13 @@ export interface SlackChannelOptions {
 export class SlackChannel implements WebhookChannel {
   readonly name = 'slack';
 
-  constructor(private readonly options: SlackChannelOptions) {}
+  constructor(
+    private readonly http: HttpService,
+    private readonly options: SlackChannelOptions,
+  ) {}
 
   async send(payload: WebhookPayload): Promise<WebhookResult> {
-    const response = await postJson({
+    const response = await postJson(this.http, {
       url: this.options.webhookUrl,
       body: this.blockKit(payload),
       timeoutMs: this.options.timeoutMs,

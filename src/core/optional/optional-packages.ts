@@ -51,7 +51,8 @@ export type OptionalPackageName = keyof typeof OPTIONAL_PACKAGES;
 
 /**
  * Features the default profile serves with no package at all, because the
- * in-house implementation is a few lines over `node:https` and a Map.
+ * in-house implementation needs no package, only `HttpModule` from
+ * `@nestjs/axios`, which the boilerplate already depends on.
  */
 export const PACKAGE_FREE_INTEGRATIONS = {
   mailMemory: {

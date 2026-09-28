@@ -1,6 +1,7 @@
+import { HttpService } from '@nestjs/axios';
 import { Logger } from '@nestjs/common';
 
-import { postJson } from './https-post.js';
+import { postJson } from './json-poster.js';
 import type {
   WebhookChannel,
   WebhookPayload,
@@ -19,7 +20,7 @@ export interface TelegramChannelOptions {
 }
 
 /**
- * Telegram Bot API over raw HTTPS, no package.
+ * Telegram Bot API over `HttpService`, no package of its own.
  *
  * Telegram rejects a message containing an unescaped `_`, `*` or backtick, so
  * the text is escaped here rather than at each call site.
@@ -27,11 +28,15 @@ export interface TelegramChannelOptions {
 export class TelegramChannel implements WebhookChannel {
   readonly name = 'telegram';
 
-  constructor(private readonly options: TelegramChannelOptions) {}
+  constructor(
+    private readonly http: HttpService,
+    private readonly options: TelegramChannelOptions,
+  ) {}
 
   async send(payload: WebhookPayload): Promise<WebhookResult> {
-    const response = await postJson({
-      url: `${this.options.baseUrl ?? 'https://api.telegram.org'}/bot${this.options.botToken}/sendMessage`,
+    const baseUrl = this.options.baseUrl ?? 'https://api.telegram.org';
+    const response = await postJson(this.http, {
+      url: `${baseUrl}/bot${this.options.botToken}/sendMessage`,
       body: {
         chat_id: this.options.chatId,
         message_thread_id: this.options.topicId,

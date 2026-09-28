@@ -25,9 +25,10 @@ optional
 - **The registry is the single list.** Add the package, the env flag and the
   install command to `optional-packages.ts`; `optional-packages.spec.ts` then
   guards the new entry against a static import.
-- **Prefer no package.** Telegram, Slack and the development mailer are a few
-  lines over `node:https` and a Map. A dependency is a permanent cost for every
-  deployment, including the ones that never use the feature.
+- **Prefer no package.** Telegram, Slack and the development mailer are built on
+  `HttpService` from `@nestjs/axios`, which the boilerplate already depends on. A
+  package nobody enabled is a permanent cost for every deployment, including the
+  ones that never use the feature.
 
 ## Adding a provider transport
 

@@ -49,15 +49,28 @@ never throw, because a feature nobody enabled must not be a startup failure.
 These ship in the box, because the implementation is small enough that a
 dependency would cost more than the code:
 
-| Feature                | Env flag                | Install command   | Implementation                                                            |
-| ---------------------- | ----------------------- | ----------------- | ------------------------------------------------------------------------- |
-| Development mail       | `MAIL_TRANSPORT=memory` | nothing, built in | `transports/memory-mail.transport.ts` keeps messages in memory            |
-| Telegram notifications | `TELEGRAM_ENABLED=true` | nothing, built in | `transports/telegram.channel.ts`, raw HTTPS, MarkdownV2 escaped centrally |
-| Slack / Discord        | `SLACK_ENABLED=true`    | nothing, built in | `transports/slack.channel.ts`, incoming webhook, Block Kit payload        |
+| Feature                | Env flag                | Install command   | Implementation                                                     |
+| ---------------------- | ----------------------- | ----------------- | ------------------------------------------------------------------ |
+| Development mail       | `MAIL_TRANSPORT=memory` | nothing, built in | `transports/memory-mail.transport.ts` keeps messages in memory     |
+| Telegram notifications | `TELEGRAM_ENABLED=true` | nothing, built in | `transports/telegram.channel.ts`, MarkdownV2 escaped centrally     |
+| Slack / Discord        | `SLACK_ENABLED=true`    | nothing, built in | `transports/slack.channel.ts`, incoming webhook, Block Kit payload |
 
-Both webhook channels post through `transports/https-post.ts`, a small
-`node:https` wrapper that refuses anything but `https:` so a bot token is never
-sent in clear text.
+None of these three adds a package of its own. They post through
+`transports/json-poster.ts`, a thin wrapper on `HttpService` from `@nestjs/axios`,
+which the boilerplate already depends on, so a channel is payload building and
+nothing more:
+
+```ts
+import { HttpModule } from '@nestjs/axios';
+
+@Module({ imports: [HttpModule] })
+export class NotificationModule {}
+```
+
+`postJson()` returns the status instead of throwing on a 4xx, because a rejected
+message is a fact to log, while a network failure still rejects so the caller can
+retry. It refuses anything but `https:`, so a bot token is never sent in clear
+text.
 
 ## Where each piece lives
 

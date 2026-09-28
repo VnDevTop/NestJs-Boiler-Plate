@@ -1,13 +1,22 @@
+import { HttpService } from '@nestjs/axios';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { of } from 'rxjs';
 
-const postJson = vi.hoisted(() => vi.fn());
-
-vi.mock('./https-post.js', () => ({ postJson }));
-
-const { escapeMarkdownV2, TelegramChannel } =
-  await import('./telegram.channel.js');
+import { escapeMarkdownV2, TelegramChannel } from './telegram.channel.js';
 
 const options = { botToken: 'token', chatId: '-100', topicId: '42' };
+
+let http: HttpService;
+
+function stub(status = 200): void {
+  http = {
+    post: vi.fn().mockReturnValue(of({ status, data: 'ok' })),
+  } as unknown as HttpService;
+}
+
+function lastBody() {
+  return vi.mocked(http.post).mock.calls[0][1] as Record<string, unknown>;
+}
 
 describe('escapeMarkdownV2', () => {
   it('escapes every character Telegram treats as markup', () => {
@@ -28,50 +37,59 @@ describe('escapeMarkdownV2', () => {
 });
 
 describe('TelegramChannel', () => {
-  beforeEach(() => {
-    postJson.mockReset();
-    postJson.mockResolvedValue({ status: 200, body: '{"ok":true}' });
-  });
+  beforeEach(() => stub());
 
   it('posts an escaped message to the bot api', async () => {
-    const channel = new TelegramChannel(options);
+    const channel = new TelegramChannel(http, options);
 
     const result = await channel.send({ text: 'user_a registered' });
 
     expect(result).toEqual({ delivered: true, status: 200 });
-    const call = postJson.mock.calls[0][0];
-    expect(call.url).toBe('https://api.telegram.org/bottoken/sendMessage');
-    expect(call.body.text).toBe('user\\_a registered');
-    expect(call.body.parse_mode).toBe('MarkdownV2');
+    expect(http.post).toHaveBeenCalledWith(
+      'https://api.telegram.org/bottoken/sendMessage',
+      expect.objectContaining({
+        text: 'user\\_a registered',
+        parse_mode: 'MarkdownV2',
+        chat_id: '-100',
+      }),
+      expect.any(Object),
+    );
   });
 
   it('routes to a topic when one is configured', async () => {
-    await new TelegramChannel(options).send({ text: 'hi' });
+    await new TelegramChannel(http, options).send({ text: 'hi' });
 
-    expect(postJson.mock.calls[0][0].body.message_thread_id).toBe('42');
+    expect(lastBody().message_thread_id).toBe('42');
   });
 
   it('omits the topic when none is configured', async () => {
-    await new TelegramChannel({ botToken: 't', chatId: 'c' }).send({
+    await new TelegramChannel(http, { botToken: 't', chatId: 'c' }).send({
       text: 'hi',
     });
 
-    expect(postJson.mock.calls[0][0].body.message_thread_id).toBeUndefined();
+    expect(lastBody().message_thread_id).toBeUndefined();
   });
 
   it('reports a rejection without throwing', async () => {
-    postJson.mockResolvedValue({ status: 400, body: 'bad request' });
+    stub(400);
 
-    const result = await new TelegramChannel(options).send({ text: 'hi' });
+    const result = await new TelegramChannel(http, options).send({
+      text: 'hi',
+    });
 
     expect(result).toEqual({ delivered: false, status: 400 });
   });
 
   it('propagates a transport failure so the caller can retry', async () => {
-    postJson.mockRejectedValue(new Error('socket hang up'));
+    http = {
+      post: vi.fn().mockReturnValue(of({ status: 0, data: '' })),
+    } as unknown as HttpService;
+    vi.mocked(http.post).mockImplementation(() => {
+      throw new Error('socket hang up');
+    });
 
     await expect(
-      new TelegramChannel(options).send({ text: 'hi' }),
+      new TelegramChannel(http, options).send({ text: 'hi' }),
     ).rejects.toThrow('socket hang up');
   });
 });
