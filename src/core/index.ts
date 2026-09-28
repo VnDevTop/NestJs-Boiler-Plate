@@ -1,4 +1,5 @@
 export * from './cache/index.js';
 export * from './health/index.js';
 export * from './logger/index.js';
+export * from './optional/index.js';
 export * from './swagger/index.js';
