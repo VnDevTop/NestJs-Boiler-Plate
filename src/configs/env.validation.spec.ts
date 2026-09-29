@@ -301,6 +301,50 @@ describe('validateEnvironment', () => {
     ).toEqual([]);
   });
 
+  it('accepts every documented mail transport', () => {
+    for (const name of ['memory', 'smtp', 'ses', 'sendgrid']) {
+      expect(problemsFor(production({ MAIL_TRANSPORT: name }))).toEqual([]);
+    }
+  });
+
+  it('rejects a transport name that is not a transport', () => {
+    // Cast because the point of the test is a value the types rule out.
+    rejects(
+      base({ MAIL_TRANSPORT: 'carrier-pigeon' as unknown as 'smtp' }),
+      'MAIL_TRANSPORT',
+    );
+  });
+
+  it('rejects a from address that is not an email', () => {
+    rejects(base({ MAIL_FROM: 'noreply' }), 'MAIL_FROM');
+  });
+
+  it('rejects a reply-to address that is not an email', () => {
+    rejects(base({ MAIL_REPLY_TO: 'support' }), 'MAIL_REPLY_TO');
+  });
+
+  it('rejects a smtp port outside the tcp range', () => {
+    rejects(base({ MAIL_SMTP_PORT: '70000' }), 'MAIL_SMTP_PORT');
+  });
+
+  it('rejects a non-boolean secure flag', () => {
+    rejects(base({ MAIL_SMTP_SECURE: 'yes' }), 'MAIL_SMTP_SECURE');
+  });
+
+  it('rejects a non-positive timeout', () => {
+    rejects(base({ MAIL_SOCKET_TIMEOUT: '0' }), 'MAIL_SOCKET_TIMEOUT');
+  });
+
+  it('does not require mail settings, since no provider may be enabled', () => {
+    // A deployment that never sends mail must not be told to configure a
+    // from address, or the namespace would be mandatory for a feature off.
+    expect(problemsFor(production({}))).toEqual([]);
+  });
+
+  it('does not police the smtp password, which a provider may leave empty', () => {
+    expect(problemsFor(production({ MAIL_SMTP_PASSWORD: '' }))).toEqual([]);
+  });
+
   it('does not police the admin password, which only the seed reads', () => {
     // Rejecting it here would stop an app that never seeds from booting; the
     // seeder states the length rule where it matters.

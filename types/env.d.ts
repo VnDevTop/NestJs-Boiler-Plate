@@ -6,7 +6,7 @@ declare namespace NodeJS {
     APP_NAME?: string;
     API_PREFIX?: string;
     API_VERSION?: string;
-    
+
     OBSERVE_APP_KEY?: string;
     OBSERVE_APP_SECRET?: string;
     OBSERVE_SERVICE_ID?: string;
@@ -17,7 +17,7 @@ declare namespace NodeJS {
     // DATABASE_USER: string;
     // DATABASE_PASSWORD: string;
     DATABASE_URL: string;
-    DATABASE_SSL?: 'true'|'false';
+    DATABASE_SSL?: 'true' | 'false';
     DATABASE_SCHEMA?: string;
 
     TWO_FACTOR_ENABLED?: 'true' | 'false';
@@ -44,6 +44,24 @@ declare namespace NodeJS {
     THROTTLE_LIMIT?: string;
     THROTTLE_BLOCK_DURATION?: string;
 
+    // Mail. Every provider package is optional, so only the transport choice and
+    // the from address matter to the app; the credentials belong to whichever
+    // provider is selected.
+    MAIL_TRANSPORT?: 'memory' | 'smtp' | 'ses' | 'sendgrid';
+    MAIL_FROM?: string;
+    MAIL_FROM_NAME?: string;
+    MAIL_REPLY_TO?: string;
+    MAIL_SUBJECT_PREFIX?: string;
+    MAIL_SMTP_HOST?: string;
+    MAIL_SMTP_PORT?: string;
+    MAIL_SMTP_SECURE?: 'true' | 'false';
+    MAIL_SMTP_USER?: string;
+    MAIL_SMTP_PASSWORD?: string;
+    MAIL_SENDGRID_API_KEY?: string;
+    MAIL_SES_REGION?: string;
+    MAIL_CONNECTION_TIMEOUT?: string;
+    MAIL_SOCKET_TIMEOUT?: string;
+
     ADMIN_EMAIL?: string;
     ADMIN_PASSWORD?: string;
 
@@ -51,7 +69,7 @@ declare namespace NodeJS {
     JWT_EXPIRES_IN: number | StringValue;
     JWT_REFRESH_SECRET: string;
     JWT_REFRESH_EXPIRES_IN: number | StringValue;
-    
+
     SWAGGER_ENABLED?: 'true' | 'false';
     SWAGGER_TITLE?: string;
     SWAGGER_DESCRIPTION?: string;

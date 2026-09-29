@@ -101,6 +101,24 @@ function createEnvSchema(strict: boolean) {
       // 0 is meaningful: block for the rest of the window.
       THROTTLE_BLOCK_DURATION: z.coerce.number().nonnegative().optional(),
 
+      // Mail. The provider packages are optional, so these are validated
+      // independently of whether any of them is installed: a transport name
+      // nobody can resolve is reported below, not here.
+      MAIL_TRANSPORT: z.enum(['memory', 'smtp', 'ses', 'sendgrid']).optional(),
+      MAIL_FROM: z.email().optional(),
+      MAIL_FROM_NAME: z.string().min(1).max(128).optional(),
+      MAIL_REPLY_TO: z.email().optional(),
+      MAIL_SUBJECT_PREFIX: z.string().max(64).optional(),
+      MAIL_SMTP_HOST: z.string().min(1).optional(),
+      MAIL_SMTP_PORT: z.coerce.number().int().min(1).max(65535).optional(),
+      MAIL_SMTP_SECURE: z.enum(['true', 'false']).optional(),
+      MAIL_SMTP_USER: z.string().min(1).optional(),
+      MAIL_SMTP_PASSWORD: z.string().optional(),
+      MAIL_SENDGRID_API_KEY: z.string().min(1).optional(),
+      MAIL_SES_REGION: z.string().min(1).optional(),
+      MAIL_CONNECTION_TIMEOUT: z.coerce.number().positive().optional(),
+      MAIL_SOCKET_TIMEOUT: z.coerce.number().positive().optional(),
+
       // Only the seed reads the password, which states the length rule itself.
       // Rejecting it here would stop an app that never seeds from booting.
       ADMIN_EMAIL: z.email().optional(),
