@@ -2,6 +2,8 @@ import { config as loadEnv } from 'dotenv';
 import { DataSource } from 'typeorm';
 
 import {
+  EmailVerificationToken,
+  PasswordResetToken,
   TwoFactorSecret,
   RefreshToken,
   UserDevice,
@@ -18,7 +20,14 @@ import { User } from '../modules/users/entities/index.js';
  */
 loadEnv();
 
-export const ENTITIES = [User, RefreshToken, UserDevice, TwoFactorSecret];
+export const ENTITIES = [
+  User,
+  RefreshToken,
+  UserDevice,
+  TwoFactorSecret,
+  EmailVerificationToken,
+  PasswordResetToken,
+];
 
 export const migrations = ['dist/database/migrations/*.js'];
 
