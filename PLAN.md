@@ -94,7 +94,7 @@ feat: add optional integration foundation
 
 ## Phase 13: Configuration Expansion
 
-Status: Pending
+Status: Done
 
 Goal:
 
@@ -104,21 +104,21 @@ namespaces already have.
 
 Tasks:
 
-- [ ] Create `src/configs/mail.config.ts` — transport, from name, reply-to,
+- [x] Create `src/configs/mail.config.ts` — transport, from name, reply-to,
       connection options, timeouts
-- [ ] Create `src/configs/notification.config.ts` — per-channel enable flags
+- [x] Create `src/configs/notification.config.ts` — per-channel enable flags
       and credentials
-- [ ] Create `src/configs/queue.config.ts` — enabled, redis url, attempts,
+- [x] Create `src/configs/queue.config.ts` — enabled, redis url, attempts,
       backoff, concurrency
-- [ ] Create `src/configs/retention.config.ts` — every age and batch size
-- [ ] Create `src/configs/password-policy.config.ts`
-- [ ] Add `APP_URL` to `app.config.ts`; every email links back to it
-- [ ] Add a `redis` namespace for queue and throttle usage, distinct from the
+- [x] Create `src/configs/retention.config.ts` — every age and batch size
+- [x] Create `src/configs/password-policy.config.ts`
+- [x] Add `APP_URL` to `app.config.ts`; every email links back to it
+- [x] Add a `redis` namespace for queue and throttle usage, distinct from the
       cache namespace so keys never collide
-- [ ] Extend `env.validation.ts`: in production `MAIL_FROM` is required,
+- [x] Extend `env.validation.ts`: in production `MAIL_FROM` is required,
       `MAIL_TRANSPORT` must not be `memory`, `APP_URL` must be an absolute
       https URL
-- [ ] Document every new variable in `.env.example` and `src/configs/README.md`
+- [x] Document every new variable in `.env.example` and `src/configs/README.md`
 
 Implementation note: a validation rule that only fires in production is
 `superRefine` on the zod schema, not a check inside the service, so a bad
@@ -596,7 +596,7 @@ lands after the harness in Phase 12 is solid.
 | Phase 10 | Cache and Performance                          | Done    |
 | Phase 11 | Production Hardening                           | Done    |
 | Phase 12 | Optional Integration Foundation                | Done    |
-| Phase 13 | Configuration Expansion                        | Pending |
+| Phase 13 | Configuration Expansion                        | Done    |
 | Phase 14 | Outbound Email                                 | Pending |
 | Phase 15 | Background Job Queue                           | Pending |
 | Phase 16 | Data Retention and Cleanup                     | Pending |
