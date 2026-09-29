@@ -19,6 +19,8 @@ const production = (overrides: Record<string, unknown> = {}) =>
     NODE_ENV: 'production',
     DATABASE_URL: 'postgresql://u:p@localhost:5432/app',
     APP_URL: 'https://app.example.com',
+    MAIL_FROM: 'no-reply@example.com',
+    MAIL_TRANSPORT: 'smtp',
     JWT_SECRET: 'a'.repeat(32),
     JWT_REFRESH_SECRET: 'b'.repeat(32),
     TWO_FACTOR_ENCRYPTION_KEY: 'c'.repeat(32),
@@ -302,9 +304,11 @@ describe('validateEnvironment', () => {
     ).toEqual([]);
   });
 
-  it('accepts every documented mail transport', () => {
+  it('accepts every documented mail transport outside production', () => {
+    // memory is a legitimate development choice; the production rule lives
+    // below, where it is asserted separately.
     for (const name of ['memory', 'smtp', 'ses', 'sendgrid']) {
-      expect(problemsFor(production({ MAIL_TRANSPORT: name }))).toEqual([]);
+      expect(problemsFor(base({ MAIL_TRANSPORT: name }))).toEqual([]);
     }
   });
 
@@ -542,6 +546,41 @@ describe('validateEnvironment', () => {
 
   it('rejects a redis prefix containing whitespace', () => {
     rejects(base({ REDIS_KEY_PREFIX: 'app redis' }), 'REDIS_KEY_PREFIX');
+  });
+
+  it('refuses the memory transport in production', () => {
+    // The memory transport keeps messages in a Map and reports success, so every
+    // dashboard says mail is being sent while nothing is delivered.
+    expect(
+      problemsFor(production({ MAIL_TRANSPORT: 'memory' })).join('\n'),
+    ).toContain('MAIL_TRANSPORT: must not be memory in production');
+  });
+
+  it('refuses an unset mail transport in production, since it defaults to memory', () => {
+    expect(
+      problemsFor(production({ MAIL_TRANSPORT: undefined })).join('\n'),
+    ).toContain('MAIL_TRANSPORT: must not be memory in production');
+  });
+
+  it('allows the memory transport outside production', () => {
+    expect(problemsFor(base({ MAIL_TRANSPORT: 'memory' }))).toEqual([]);
+  });
+
+  it('accepts each real provider in production', () => {
+    for (const name of ['smtp', 'ses', 'sendgrid']) {
+      expect(problemsFor(production({ MAIL_TRANSPORT: name }))).toEqual([]);
+    }
+  });
+
+  it('requires a from address in production', () => {
+    expect(
+      problemsFor(production({ MAIL_FROM: undefined })).join('\n'),
+    ).toContain('MAIL_FROM: is required in production');
+  });
+
+  it('does not require a from address outside production', () => {
+    // An app that never sends mail should not be made to configure a sender.
+    expect(problemsFor(base({}))).toEqual([]);
   });
 
   it('does not police the admin password, which only the seed reads', () => {

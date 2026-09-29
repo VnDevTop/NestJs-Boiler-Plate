@@ -400,6 +400,33 @@ function createEnvSchema(strict: boolean) {
             'must differ from CACHE_KEY_PREFIX, a cache sweep would evict queue jobs',
         });
       }
+
+      // The memory transport is the development default and it is a no-op: it
+      // keeps messages in a Map and returns success. In production that reads
+      // as "mail is being sent" on every dashboard while nothing is delivered,
+      // so it is refused at boot rather than discovered by a user.
+      //
+      // An unset value resolves to memory in `mail.config.ts`, so it counts too:
+      // otherwise setting only MAIL_FROM would leave a deployment silently
+      // delivering nothing.
+      if (strict && (value.MAIL_TRANSPORT ?? 'memory') === 'memory') {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['MAIL_TRANSPORT'],
+          message:
+            'must not be memory in production, it delivers nothing. Set a provider and install its package.',
+        });
+      }
+
+      // Without a from address a provider either rejects the message or sends it
+      // as from the wrong sender, so a production deploy has to name one.
+      if (strict && !value.MAIL_FROM) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['MAIL_FROM'],
+          message: 'is required in production',
+        });
+      }
     });
 }
 
