@@ -119,6 +119,35 @@ function createEnvSchema(strict: boolean) {
       MAIL_CONNECTION_TIMEOUT: z.coerce.number().positive().optional(),
       MAIL_SOCKET_TIMEOUT: z.coerce.number().positive().optional(),
 
+      // Notifications. The credential rules are conditional on the channel
+      // flag, since an off channel needs no credential.
+      NOTIFICATION_ENABLED: z.enum(['true', 'false']).optional(),
+      NOTIFICATION_CONSOLE_ENABLED: z.enum(['true', 'false']).optional(),
+      NOTIFICATION_TIMEOUT: z.coerce.number().positive().optional(),
+      NOTIFICATION_RETRIES: z.coerce.number().int().nonnegative().optional(),
+      NOTIFICATION_RETRY_DELAY: z.coerce.number().nonnegative().optional(),
+      NOTIFICATION_THROW_ON_FAILURE: z.enum(['true', 'false']).optional(),
+      TELEGRAM_ENABLED: z.enum(['true', 'false']).optional(),
+      TELEGRAM_BOT_TOKEN: z.string().min(1).optional(),
+      TELEGRAM_CHAT_ID: z.string().min(1).optional(),
+      TELEGRAM_TOPIC_ID: z.string().min(1).optional(),
+      SLACK_ENABLED: z.enum(['true', 'false']).optional(),
+      SLACK_WEBHOOK_URL: z
+        .url()
+        .refine((value) => value.startsWith('https://'), {
+          message: 'must use https:, a webhook url carries the credential',
+        })
+        .optional(),
+      SLACK_CHANNEL: z.string().min(1).max(64).optional(),
+      DISCORD_ENABLED: z.enum(['true', 'false']).optional(),
+      DISCORD_WEBHOOK_URL: z
+        .url()
+        .refine((value) => value.startsWith('https://'), {
+          message: 'must use https:, a webhook url carries the credential',
+        })
+        .optional(),
+      DISCORD_CHANNEL: z.string().min(1).max(64).optional(),
+
       // Only the seed reads the password, which states the length rule itself.
       // Rejecting it here would stop an app that never seeds from booting.
       ADMIN_EMAIL: z.email().optional(),
@@ -203,6 +232,31 @@ function createEnvSchema(strict: boolean) {
           path: ['CACHE_URL'],
           message: `is required when CACHE_BACKEND is ${value.CACHE_BACKEND}`,
         });
+      }
+
+      // A channel switched on with no credential is a channel that silently
+      // drops every message, which looks identical to a working integration.
+      // Reported per channel so the message names the one that is wrong.
+      const channels: [flag: string | undefined, ...required: string[]][] = [
+        ['TELEGRAM_ENABLED', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID'],
+        ['SLACK_ENABLED', 'SLACK_WEBHOOK_URL'],
+        ['DISCORD_ENABLED', 'DISCORD_WEBHOOK_URL'],
+      ];
+
+      for (const [flag, ...required] of channels) {
+        if (value[flag as 'TELEGRAM_ENABLED'] !== 'true') {
+          continue;
+        }
+
+        for (const name of required) {
+          if (!value[name as 'TELEGRAM_BOT_TOKEN']) {
+            ctx.addIssue({
+              code: 'custom',
+              path: [name],
+              message: `is required when ${flag} is true`,
+            });
+          }
+        }
       }
     });
 }

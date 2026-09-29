@@ -62,6 +62,25 @@ declare namespace NodeJS {
     MAIL_CONNECTION_TIMEOUT?: string;
     MAIL_SOCKET_TIMEOUT?: string;
 
+    // Notifications. No channel needs a package, so these are pure
+    // configuration. A channel that is off does not need its credentials.
+    NOTIFICATION_ENABLED?: 'true' | 'false';
+    NOTIFICATION_CONSOLE_ENABLED?: 'true' | 'false';
+    NOTIFICATION_TIMEOUT?: string;
+    NOTIFICATION_RETRIES?: string;
+    NOTIFICATION_RETRY_DELAY?: string;
+    NOTIFICATION_THROW_ON_FAILURE?: 'true' | 'false';
+    TELEGRAM_ENABLED?: 'true' | 'false';
+    TELEGRAM_BOT_TOKEN?: string;
+    TELEGRAM_CHAT_ID?: string;
+    TELEGRAM_TOPIC_ID?: string;
+    SLACK_ENABLED?: 'true' | 'false';
+    SLACK_WEBHOOK_URL?: string;
+    SLACK_CHANNEL?: string;
+    DISCORD_ENABLED?: 'true' | 'false';
+    DISCORD_WEBHOOK_URL?: string;
+    DISCORD_CHANNEL?: string;
+
     ADMIN_EMAIL?: string;
     ADMIN_PASSWORD?: string;
 

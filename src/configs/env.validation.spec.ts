@@ -345,6 +345,50 @@ describe('validateEnvironment', () => {
     expect(problemsFor(production({ MAIL_SMTP_PASSWORD: '' }))).toEqual([]);
   });
 
+  it('requires the credential for a channel that is switched on', () => {
+    // A channel with no credential is a channel that drops every message,
+    // which is indistinguishable from a working one from the outside.
+    expect(problemsFor(base({ TELEGRAM_ENABLED: 'true' }))).toEqual([
+      '- TELEGRAM_BOT_TOKEN: is required when TELEGRAM_ENABLED is true',
+      '- TELEGRAM_CHAT_ID: is required when TELEGRAM_ENABLED is true',
+    ]);
+  });
+
+  it('requires a webhook url for a webhook channel that is switched on', () => {
+    expect(problemsFor(base({ SLACK_ENABLED: 'true' }))).toEqual([
+      '- SLACK_WEBHOOK_URL: is required when SLACK_ENABLED is true',
+    ]);
+    expect(problemsFor(base({ DISCORD_ENABLED: 'true' }))).toEqual([
+      '- DISCORD_WEBHOOK_URL: is required when DISCORD_ENABLED is true',
+    ]);
+  });
+
+  it('accepts a channel that is switched on with its credential', () => {
+    expect(
+      problemsFor(
+        base({
+          TELEGRAM_ENABLED: 'true',
+          TELEGRAM_BOT_TOKEN: 'token',
+          TELEGRAM_CHAT_ID: '-100',
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('does not require a credential for a channel that is switched off', () => {
+    // The credentials stay harmless, so an operator can stage them ahead of
+    // turning the channel on.
+    expect(problemsFor(base({ SLACK_WEBHOOK_URL: undefined }))).toEqual([]);
+  });
+
+  it('requires a webhook url to be https, since it carries the credential', () => {
+    rejects(base({ SLACK_WEBHOOK_URL: 'http://hooks/x' }), 'SLACK_WEBHOOK_URL');
+  });
+
+  it('rejects a negative retry count', () => {
+    rejects(base({ NOTIFICATION_RETRIES: '-1' }), 'NOTIFICATION_RETRIES');
+  });
+
   it('does not police the admin password, which only the seed reads', () => {
     // Rejecting it here would stop an app that never seeds from booting; the
     // seeder states the length rule where it matters.
