@@ -1,6 +1,30 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { validateEnvironment } from './env.validation.js';
+
+/**
+ * The documented environment, parsed the way `ConfigModule` parses it.
+ *
+ * `.env.example` is the file every clone copies, so a value it ships must pass
+ * validation. This is the test that catches an example value drifting out of
+ * step with the rules that reject example values.
+ */
+function exampleEnv(): Record<string, unknown> {
+  const raw = readFileSync(join(process.cwd(), '.env.example'), 'utf8');
+
+  return Object.fromEntries(
+    raw
+      .split('\n')
+      .filter((line) => line.trim() && !line.trim().startsWith('#'))
+      .map((line) => {
+        const index = line.indexOf('=');
+        return [line.slice(0, index).trim(), line.slice(index + 1).trim()];
+      }),
+  );
+}
 
 /** A configuration that passes in development, so each test can break one thing. */
 function base(
@@ -18,6 +42,9 @@ const production = (overrides: Record<string, unknown> = {}) =>
   base({
     NODE_ENV: 'production',
     DATABASE_URL: 'postgresql://u:p@localhost:5432/app',
+    APP_URL: 'https://app.example.com',
+    MAIL_FROM: 'no-reply@example.com',
+    MAIL_TRANSPORT: 'smtp',
     JWT_SECRET: 'a'.repeat(32),
     JWT_REFRESH_SECRET: 'b'.repeat(32),
     TWO_FACTOR_ENCRYPTION_KEY: 'c'.repeat(32),
@@ -46,6 +73,31 @@ function rejects(config: Record<string, unknown>, variable: string): void {
 }
 
 describe('validateEnvironment', () => {
+  it('accepts .env.example as copied, in development', () => {
+    // The regression this guards: .env.example shipped TWO_FACTOR_ENCRYPTION_KEY
+    // as `change-me`, which the placeholder rules reject, so a fresh clone could
+    // not boot from its own example file.
+    expect(() => validateEnvironment(exampleEnv())).not.toThrow();
+  });
+
+  it('rejects the example 2fa key once the example file reaches production', () => {
+    // The counterpart to the test above: usable in development, never in
+    // production, because a key in the repository is not a secret.
+    const example = exampleEnv();
+
+    expect(() =>
+      validateEnvironment({
+        ...example,
+        NODE_ENV: 'production',
+        JWT_SECRET: 'a'.repeat(32),
+        JWT_REFRESH_SECRET: 'b'.repeat(32),
+        APP_URL: 'https://app.example.com',
+        MAIL_FROM: 'no-reply@example.com',
+        MAIL_TRANSPORT: 'smtp',
+      }),
+    ).toThrow(/TWO_FACTOR_ENCRYPTION_KEY/);
+  });
+
   it('accepts a development configuration with placeholder secrets', () => {
     expect(() => validateEnvironment(base())).not.toThrow();
   });
@@ -95,13 +147,23 @@ describe('validateEnvironment', () => {
     ).toContain('- DATABASE_URL: must use one of: postgres:, postgresql:');
   });
 
-  it('reports a blank url as invalid and as the wrong protocol', () => {
-    // A blank value fails both checks, and saying so twice is more useful than
-    // either message alone.
-    expect(problemsFor(production({ DATABASE_URL: '   ' }))).toEqual([
-      '- DATABASE_URL: Invalid URL',
-      '- DATABASE_URL: must use one of: postgres:, postgresql:',
+  it('treats a blank variable as unset, not as an invalid value', () => {
+    // `.env.example` documents every optional as `KEY=`, so a blank has to
+    // mean "nothing here" or that file cannot be copied and edited.
+    expect(problemsFor(production({ CACHE_URL: '   ' }))).toEqual([]);
+  });
+
+  it('still requires a variable that is set to blank, when it is required', () => {
+    // Dropping the blank must not turn a required variable into an optional one.
+    expect(problemsFor(production({ APP_URL: '  ' }))).toEqual([
+      '- APP_URL: is required',
     ]);
+  });
+
+  it('does not let a blank credential satisfy a required one', () => {
+    expect(
+      problemsFor(base({ SLACK_ENABLED: 'true', SLACK_WEBHOOK_URL: '  ' })),
+    ).toEqual(['- SLACK_WEBHOOK_URL: is required when SLACK_ENABLED is true']);
   });
 
   it('rejects a cache url that is not a redis url', () => {
@@ -242,6 +304,31 @@ describe('validateEnvironment', () => {
     ).toEqual(['- TWO_FACTOR_ENCRYPTION_KEY: still holds the example value']);
   });
 
+  it('rejects the development 2fa key in production', () => {
+    // This is the value .env.example ships, so a deploy that copies the file and
+    // changes nothing else would otherwise encrypt every stored TOTP secret with
+    // a key that is in the repository.
+    expect(
+      problemsFor(
+        production({
+          TWO_FACTOR_ENCRYPTION_KEY: 'dev-only-2fa-key-generate-your-own',
+        }),
+      ),
+    ).toEqual(['- TWO_FACTOR_ENCRYPTION_KEY: still holds the example value']);
+  });
+
+  it('accepts the development 2fa key outside production', () => {
+    // A fresh clone has to boot from .env.example without editing anything else,
+    // which is why this rule is strict-only.
+    expect(
+      problemsFor(
+        base({
+          TWO_FACTOR_ENCRYPTION_KEY: 'dev-only-2fa-key-generate-your-own',
+        }),
+      ),
+    ).toEqual([]);
+  });
+
   it('requires a cache url for a shared cache backend', () => {
     // Otherwise the default points at localhost and fails much later.
     expect(
@@ -299,6 +386,285 @@ describe('validateEnvironment', () => {
         }),
       ),
     ).toEqual([]);
+  });
+
+  it('accepts every documented mail transport outside production', () => {
+    // memory is a legitimate development choice; the production rule lives
+    // below, where it is asserted separately.
+    for (const name of ['memory', 'smtp', 'ses', 'sendgrid']) {
+      expect(problemsFor(base({ MAIL_TRANSPORT: name }))).toEqual([]);
+    }
+  });
+
+  it('rejects a transport name that is not a transport', () => {
+    // Cast because the point of the test is a value the types rule out.
+    rejects(
+      base({ MAIL_TRANSPORT: 'carrier-pigeon' as unknown as 'smtp' }),
+      'MAIL_TRANSPORT',
+    );
+  });
+
+  it('rejects a from address that is not an email', () => {
+    rejects(base({ MAIL_FROM: 'noreply' }), 'MAIL_FROM');
+  });
+
+  it('rejects a reply-to address that is not an email', () => {
+    rejects(base({ MAIL_REPLY_TO: 'support' }), 'MAIL_REPLY_TO');
+  });
+
+  it('rejects a smtp port outside the tcp range', () => {
+    rejects(base({ MAIL_SMTP_PORT: '70000' }), 'MAIL_SMTP_PORT');
+  });
+
+  it('rejects a non-boolean secure flag', () => {
+    rejects(base({ MAIL_SMTP_SECURE: 'yes' }), 'MAIL_SMTP_SECURE');
+  });
+
+  it('rejects a non-positive timeout', () => {
+    rejects(base({ MAIL_SOCKET_TIMEOUT: '0' }), 'MAIL_SOCKET_TIMEOUT');
+  });
+
+  it('does not require mail settings, since no provider may be enabled', () => {
+    // A deployment that never sends mail must not be told to configure a
+    // from address, or the namespace would be mandatory for a feature off.
+    expect(problemsFor(production({}))).toEqual([]);
+  });
+
+  it('does not police the smtp password, which a provider may leave empty', () => {
+    expect(problemsFor(production({ MAIL_SMTP_PASSWORD: '' }))).toEqual([]);
+  });
+
+  it('requires the credential for a channel that is switched on', () => {
+    // A channel with no credential is a channel that drops every message,
+    // which is indistinguishable from a working one from the outside.
+    expect(problemsFor(base({ TELEGRAM_ENABLED: 'true' }))).toEqual([
+      '- TELEGRAM_BOT_TOKEN: is required when TELEGRAM_ENABLED is true',
+      '- TELEGRAM_CHAT_ID: is required when TELEGRAM_ENABLED is true',
+    ]);
+  });
+
+  it('requires a webhook url for a webhook channel that is switched on', () => {
+    expect(problemsFor(base({ SLACK_ENABLED: 'true' }))).toEqual([
+      '- SLACK_WEBHOOK_URL: is required when SLACK_ENABLED is true',
+    ]);
+    expect(problemsFor(base({ DISCORD_ENABLED: 'true' }))).toEqual([
+      '- DISCORD_WEBHOOK_URL: is required when DISCORD_ENABLED is true',
+    ]);
+  });
+
+  it('accepts a channel that is switched on with its credential', () => {
+    expect(
+      problemsFor(
+        base({
+          TELEGRAM_ENABLED: 'true',
+          TELEGRAM_BOT_TOKEN: 'token',
+          TELEGRAM_CHAT_ID: '-100',
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('does not require a credential for a channel that is switched off', () => {
+    // The credentials stay harmless, so an operator can stage them ahead of
+    // turning the channel on.
+    expect(problemsFor(base({ SLACK_WEBHOOK_URL: undefined }))).toEqual([]);
+  });
+
+  it('requires a webhook url to be https, since it carries the credential', () => {
+    rejects(base({ SLACK_WEBHOOK_URL: 'http://hooks/x' }), 'SLACK_WEBHOOK_URL');
+  });
+
+  it('rejects a negative retry count', () => {
+    rejects(base({ NOTIFICATION_RETRIES: '-1' }), 'NOTIFICATION_RETRIES');
+  });
+
+  it('requires a redis url only when the queue is switched on', () => {
+    // The in-process fallback needs no redis, so requiring a url unconditionally
+    // would make the queue mandatory for an app that never uses it.
+    expect(problemsFor(base({ QUEUE_ENABLED: 'false' }))).toEqual([]);
+    expect(problemsFor(base({ QUEUE_ENABLED: 'true' }))).toEqual([
+      '- QUEUE_REDIS_URL: is required when QUEUE_ENABLED is true',
+    ]);
+  });
+
+  it('accepts an enabled queue with a redis url', () => {
+    expect(
+      problemsFor(
+        base({
+          QUEUE_ENABLED: 'true',
+          QUEUE_REDIS_URL: 'redis://localhost:6379/1',
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('rejects a queue url that is not a redis url', () => {
+    rejects(
+      base({ QUEUE_ENABLED: 'true', QUEUE_REDIS_URL: 'postgres://localhost' }),
+      'QUEUE_REDIS_URL',
+    );
+  });
+
+  it('rejects a queue concurrency of zero, which would stall every job', () => {
+    rejects(base({ QUEUE_CONCURRENCY_MAIL: '0' }), 'QUEUE_CONCURRENCY_MAIL');
+  });
+
+  it('rejects a retry count of zero, which would never retry', () => {
+    rejects(base({ QUEUE_RETRY_ATTEMPTS: '0' }), 'QUEUE_RETRY_ATTEMPTS');
+  });
+
+  it('rejects a retention age below a day, which would delete live data', () => {
+    // A zero here means "delete everything older than now": a typo becomes data
+    // loss rather than a failed deploy.
+    for (const name of [
+      'RETENTION_USERS_DAYS',
+      'RETENTION_EMAIL_TOKENS_DAYS',
+      'RETENTION_REFRESH_TOKENS_DAYS',
+      'RETENTION_AUDIT_LOGS_DAYS',
+    ]) {
+      rejects(base({ [name]: '0' }), name);
+    }
+  });
+
+  it('accepts a retention age of one day', () => {
+    expect(problemsFor(base({ RETENTION_USERS_DAYS: '1' }))).toEqual([]);
+  });
+
+  it('rejects a fractional retention age, which is not a day boundary', () => {
+    rejects(
+      base({ RETENTION_MAIL_LOGS_DAYS: '1.5' }),
+      'RETENTION_MAIL_LOGS_DAYS',
+    );
+  });
+
+  it('rejects a batch size of zero, which would never delete anything', () => {
+    rejects(base({ RETENTION_BATCH_SIZE: '0' }), 'RETENTION_BATCH_SIZE');
+  });
+
+  it('does not require retention settings, since the job is off by default', () => {
+    expect(problemsFor(production({}))).toEqual([]);
+  });
+
+  it('rejects a minimum password length below what the auth DTOs enforce', () => {
+    // 8 is the hard-coded @MinLength in register.dto and login.dto, so a
+    // smaller value here would look configured while changing nothing, and a
+    // deploy could read it as an intentional loosening.
+    rejects(base({ PASSWORD_MIN_LENGTH: '4' }), 'PASSWORD_MIN_LENGTH');
+  });
+
+  it('rejects a maximum password length that is pure work for the server', () => {
+    // scrypt has no 72 byte truncation, so the cap is not about the hash
+    // ignoring a tail. It stops a request carrying a megabyte of password from
+    // occupying a hash for long enough to matter.
+    rejects(base({ PASSWORD_MAX_LENGTH: '100000' }), 'PASSWORD_MAX_LENGTH');
+  });
+
+  it('rejects a minimum above the maximum, which would reject every password', () => {
+    rejects(
+      base({ PASSWORD_MIN_LENGTH: '20', PASSWORD_MAX_LENGTH: '10' }),
+      'PASSWORD_MAX_LENGTH',
+    );
+  });
+
+  it('accepts a minimum equal to the maximum', () => {
+    expect(
+      problemsFor(
+        base({ PASSWORD_MIN_LENGTH: '12', PASSWORD_MAX_LENGTH: '12' }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('allows the lockout to be disabled with zero', () => {
+    expect(problemsFor(base({ LOGIN_MAX_FAILED_ATTEMPTS: '0' }))).toEqual([]);
+  });
+
+  it('rejects a non-positive lockout duration, which would lock forever', () => {
+    rejects(base({ LOGIN_LOCKOUT_DURATION: '0' }), 'LOGIN_LOCKOUT_DURATION');
+  });
+
+  it('requires an app url in production, since every email link is built from it', () => {
+    // A wrong value does not produce a broken link, it sends a password reset
+    // token to whichever deployment the url points at.
+    expect(problemsFor(production({ APP_URL: undefined }))).toEqual([
+      '- APP_URL: is required',
+    ]);
+  });
+
+  it('requires an https app url in production', () => {
+    rejects(production({ APP_URL: 'http://app.example.com' }), 'APP_URL');
+  });
+
+  it('rejects an app url that is not absolute', () => {
+    rejects(production({ APP_URL: '/api' }), 'APP_URL');
+  });
+
+  it('allows a plain http app url outside production, for local work', () => {
+    expect(problemsFor(base({ APP_URL: 'http://localhost:3000' }))).toEqual([]);
+  });
+
+  it('does not require an app url outside production', () => {
+    expect(problemsFor(base({}))).toEqual([]);
+  });
+
+  it('rejects a redis prefix that matches the cache prefix', () => {
+    // The cache evicts by TTL. A shared prefix means a short cache TTL discards
+    // pending queue jobs, and a long one leaves the cache growing on its own.
+    expect(
+      problemsFor(base({ REDIS_KEY_PREFIX: 'app', CACHE_KEY_PREFIX: 'app' })),
+    ).toEqual([
+      '- REDIS_KEY_PREFIX: must differ from CACHE_KEY_PREFIX, a cache sweep would evict queue jobs',
+    ]);
+  });
+
+  it('accepts a redis prefix distinct from the cache one', () => {
+    expect(
+      problemsFor(
+        base({ REDIS_KEY_PREFIX: 'app:redis', CACHE_KEY_PREFIX: 'app' }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('rejects a redis url that is not a redis url', () => {
+    rejects(base({ REDIS_URL: 'postgres://localhost' }), 'REDIS_URL');
+  });
+
+  it('rejects a redis prefix containing whitespace', () => {
+    rejects(base({ REDIS_KEY_PREFIX: 'app redis' }), 'REDIS_KEY_PREFIX');
+  });
+
+  it('refuses the memory transport in production', () => {
+    // The memory transport keeps messages in a Map and reports success, so every
+    // dashboard says mail is being sent while nothing is delivered.
+    expect(
+      problemsFor(production({ MAIL_TRANSPORT: 'memory' })).join('\n'),
+    ).toContain('MAIL_TRANSPORT: must not be memory in production');
+  });
+
+  it('refuses an unset mail transport in production, since it defaults to memory', () => {
+    expect(
+      problemsFor(production({ MAIL_TRANSPORT: undefined })).join('\n'),
+    ).toContain('MAIL_TRANSPORT: must not be memory in production');
+  });
+
+  it('allows the memory transport outside production', () => {
+    expect(problemsFor(base({ MAIL_TRANSPORT: 'memory' }))).toEqual([]);
+  });
+
+  it('accepts each real provider in production', () => {
+    for (const name of ['smtp', 'ses', 'sendgrid']) {
+      expect(problemsFor(production({ MAIL_TRANSPORT: name }))).toEqual([]);
+    }
+  });
+
+  it('requires a from address in production', () => {
+    expect(
+      problemsFor(production({ MAIL_FROM: undefined })).join('\n'),
+    ).toContain('MAIL_FROM: is required in production');
+  });
+
+  it('does not require a from address outside production', () => {
+    // An app that never sends mail should not be made to configure a sender.
+    expect(problemsFor(base({}))).toEqual([]);
   });
 
   it('does not police the admin password, which only the seed reads', () => {
