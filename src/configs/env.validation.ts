@@ -50,6 +50,14 @@ function createEnvSchema(strict: boolean) {
       PORT: z.coerce.number().int().min(1).max(65535).optional(),
 
       APP_NAME: z.string().min(1).optional(),
+      // Every email link is built from this, so a wrong value sends a password
+      // reset token to somebody else's deployment. Required, and https, in
+      // production; localhost is fine in development.
+      APP_URL: strict
+        ? z.url().refine((value) => value.startsWith('https://'), {
+            message: 'must use https: in production',
+          })
+        : z.url().optional(),
       // Both end up in the request path, so a slash in them produces a route
       // nobody can call.
       API_PREFIX: z

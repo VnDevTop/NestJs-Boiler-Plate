@@ -18,6 +18,7 @@ const production = (overrides: Record<string, unknown> = {}) =>
   base({
     NODE_ENV: 'production',
     DATABASE_URL: 'postgresql://u:p@localhost:5432/app',
+    APP_URL: 'https://app.example.com',
     JWT_SECRET: 'a'.repeat(32),
     JWT_REFRESH_SECRET: 'b'.repeat(32),
     TWO_FACTOR_ENCRYPTION_KEY: 'c'.repeat(32),
@@ -491,6 +492,30 @@ describe('validateEnvironment', () => {
 
   it('rejects a non-positive lockout duration, which would lock forever', () => {
     rejects(base({ LOGIN_LOCKOUT_DURATION: '0' }), 'LOGIN_LOCKOUT_DURATION');
+  });
+
+  it('requires an app url in production, since every email link is built from it', () => {
+    // A wrong value does not produce a broken link, it sends a password reset
+    // token to whichever deployment the url points at.
+    expect(problemsFor(production({ APP_URL: undefined }))).toEqual([
+      '- APP_URL: is required',
+    ]);
+  });
+
+  it('requires an https app url in production', () => {
+    rejects(production({ APP_URL: 'http://app.example.com' }), 'APP_URL');
+  });
+
+  it('rejects an app url that is not absolute', () => {
+    rejects(production({ APP_URL: '/api' }), 'APP_URL');
+  });
+
+  it('allows a plain http app url outside production, for local work', () => {
+    expect(problemsFor(base({ APP_URL: 'http://localhost:3000' }))).toEqual([]);
+  });
+
+  it('does not require an app url outside production', () => {
+    expect(problemsFor(base({}))).toEqual([]);
   });
 
   it('does not police the admin password, which only the seed reads', () => {

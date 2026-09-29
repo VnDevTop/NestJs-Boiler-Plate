@@ -4,6 +4,9 @@ declare namespace NodeJS {
 
     PORT: string;
     APP_NAME?: string;
+    // Absolute base url, required and https in production. Every email link is
+    // built from it.
+    APP_URL?: string;
     API_PREFIX?: string;
     API_VERSION?: string;
 
