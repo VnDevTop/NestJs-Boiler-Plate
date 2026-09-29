@@ -147,6 +147,12 @@ Goal:
 Deliver transactional email through a swappable transport, with templates
 written as plain functions so no template engine dependency is introduced.
 
+Note: templates are deliberately plain functions in this phase, and the ones
+shipped in the repository are the only ones that can send. A template engine and
+database-managed templates are a separate phase, Phase 22, because they are a
+runtime dependency and an admin surface, and neither belongs in the phase whose
+job is to make a user receive a welcome email.
+
 Tasks:
 
 - [ ] Create `src/modules/mail` with `mail.module.ts`, `mail.service.ts`
@@ -157,10 +163,10 @@ Tasks:
 - [ ] Implement `ses.transport.ts` and `sendgrid.transport.ts` over their
       optional packages
 - [ ] Make `memory` the development default and refuse it in production
-- [ ] Build `templates/template.registry.ts` mapping a name to
+- [x] Build `templates/template.registry.ts` mapping a name to
       `{ subject, render(data) }`
-- [ ] Render both an HTML and a plain-text part for every template
-- [ ] Give each template exactly the data it needs, never the user entity
+- [x] Render both an HTML and a plain-text part for every template
+- [x] Give each template exactly the data it needs, never the user entity
 - [ ] Generate a stable mail id per message, log it, and return it to the caller
 - [ ] Add `POST /auth/forgot-password`, returning 202 with a generic message
 - [ ] Add `POST /auth/reset-password`, single-use token, invalidates other
@@ -538,6 +544,63 @@ test: cover optional dependencies, cache invalidation and retention
 
 ---
 
+## Phase 22: Configurable Email Templates
+
+Status: Pending
+
+Goal:
+
+Let an operator change a welcome email or a password reset email without a
+deploy, by storing the template in the database and rendering it with a real
+engine. Phase 14 ships plain functions, which is right for a boilerplate: the
+templates in the repository are code, they are reviewed in a diff, and the app
+has no template dependency at all. This phase trades both for editability.
+
+Tasks:
+
+- [ ] Add `handlebars` as a dependency, and say plainly in the README that the
+      no-dependency property of Phase 14 is what is being given up
+- [ ] Create the `email_templates` entity: name, locale, subject, text, html,
+      version, `updatedBy`, timestamps
+- [ ] Ship the six Phase 14 templates as `.hbs` files, and seed the table from
+      them so a fresh clone has every template present
+- [ ] Make the database row the override and the `.hbs` file the fallback, so an
+      app with an empty table still sends every mail
+- [ ] Render through `CacheService.wrap()` under a new `CACHE_NAMESPACE.Mail`
+      key, so a hot template expiring under load does not stampede the table
+- [ ] Invalidate the cache entry on every template write, so an edit takes
+      effect on the next send rather than after a TTL
+- [ ] Add `GET/PUT /admin/mail-templates/:name` behind a permission, writing an
+      audit entry through the Phase 19 audit log
+- [ ] Reject a stored template containing `{{{`, since raw interpolation of a
+      user-controlled field is stored XSS in the mail client
+- [ ] Keep the per-template data contract: the admin form lists the allowed
+      fields, so an editor cannot add a variable no call site supplies
+- [ ] Preview a stored template against sample data before saving it
+- [ ] Purge template versions older than the Phase 16 retention window
+
+Implementation note: a stored template is untrusted input even though only an
+admin writes it. Handlebars escapes `{{ }}` and not `{{{ }}}`, so a template
+that opts out of escaping turns a first name into script in a mail client. The
+narrow rule is that the `{{{` sequence is rejected in anything read from the
+database, while a `.hbs` file in the repository is trusted because it went
+through review.
+
+Expected outcome:
+
+- An operator edits a transactional email in the running app, with a preview,
+  and the change reaches the next send.
+- A template can still be reviewed in a diff, because the file remains the
+  fallback and the seed.
+
+Expected commit:
+
+```text
+feat: add database-managed email templates
+```
+
+---
+
 ## Follow-up Candidates
 
 Not scheduled. Each needs a decision before it becomes a phase.
@@ -605,3 +668,4 @@ lands after the harness in Phase 12 is solid.
 | Phase 19 | Account Security Features                      | Pending |
 | Phase 20 | Operational Hardening                          | Pending |
 | Phase 21 | Testing Depth and Documentation                | Pending |
+| Phase 22 | Configurable Email Templates                   | Pending |
