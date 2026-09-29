@@ -95,6 +95,18 @@ function createEnvSchema(strict: boolean) {
       CACHE_EMPTY_TTL: z.coerce.number().positive().optional(),
       CACHE_CONNECT_TIMEOUT: z.coerce.number().positive().optional(),
 
+      // Redis for the queue and the shared throttler. The cache has its own
+      // url, so a deployment can put the two on different servers.
+      REDIS_URL: z
+        .url()
+        .refine((value) => /^rediss?:/.test(value), {
+          message: 'must use one of: redis:, rediss:',
+        })
+        .optional(),
+      REDIS_KEY_PREFIX: z.string().min(1).regex(/^\S+$/).optional(),
+      REDIS_CONNECT_TIMEOUT: z.coerce.number().positive().optional(),
+      REDIS_DISABLE_OFFLINE_QUEUE: z.enum(['true', 'false']).optional(),
+
       JWT_SECRET: secret,
       JWT_REFRESH_SECRET: secret,
       JWT_EXPIRES_IN: z.string().optional(),
@@ -371,6 +383,21 @@ function createEnvSchema(strict: boolean) {
           code: 'custom',
           path: ['PASSWORD_MAX_LENGTH'],
           message: 'must be at least PASSWORD_MIN_LENGTH',
+        });
+      }
+
+      // The cache prefix and the redis prefix must not match. A cache sweep
+      // evicts by TTL, so one namespace shared by both means a short cache TTL
+      // discards pending jobs and a long one leaves the cache growing.
+      if (
+        value.REDIS_KEY_PREFIX &&
+        value.REDIS_KEY_PREFIX === value.CACHE_KEY_PREFIX
+      ) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['REDIS_KEY_PREFIX'],
+          message:
+            'must differ from CACHE_KEY_PREFIX, a cache sweep would evict queue jobs',
         });
       }
     });

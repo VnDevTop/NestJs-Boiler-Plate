@@ -5,6 +5,7 @@ export * from './database.config.js';
 export * from './jwt.config.js';
 export * from './env.validation.js';
 export * from './observe.config.js';
+export * from './redis.config.js';
 export * from './security.config.js';
 export * from './throttler.config.js';
 export * from './swagger.config.js';

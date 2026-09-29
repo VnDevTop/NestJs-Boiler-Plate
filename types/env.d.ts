@@ -34,6 +34,13 @@ declare namespace NodeJS {
     CACHE_EMPTY_TTL?: string;
     CACHE_CONNECT_TIMEOUT?: string;
 
+    // Redis for the queue and the shared throttler. Distinct from the cache
+    // namespace: a cache sweep must not evict a pending job.
+    REDIS_URL?: string;
+    REDIS_KEY_PREFIX?: string;
+    REDIS_CONNECT_TIMEOUT?: string;
+    REDIS_DISABLE_OFFLINE_QUEUE?: 'true' | 'false';
+
     SECURITY_ENABLED?: string;
     SECURITY_CONTENT_SECURITY_POLICY?: string;
     SECURITY_HSTS_MAX_AGE?: string;

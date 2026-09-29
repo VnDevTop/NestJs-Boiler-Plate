@@ -518,6 +518,32 @@ describe('validateEnvironment', () => {
     expect(problemsFor(base({}))).toEqual([]);
   });
 
+  it('rejects a redis prefix that matches the cache prefix', () => {
+    // The cache evicts by TTL. A shared prefix means a short cache TTL discards
+    // pending queue jobs, and a long one leaves the cache growing on its own.
+    expect(
+      problemsFor(base({ REDIS_KEY_PREFIX: 'app', CACHE_KEY_PREFIX: 'app' })),
+    ).toEqual([
+      '- REDIS_KEY_PREFIX: must differ from CACHE_KEY_PREFIX, a cache sweep would evict queue jobs',
+    ]);
+  });
+
+  it('accepts a redis prefix distinct from the cache one', () => {
+    expect(
+      problemsFor(
+        base({ REDIS_KEY_PREFIX: 'app:redis', CACHE_KEY_PREFIX: 'app' }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('rejects a redis url that is not a redis url', () => {
+    rejects(base({ REDIS_URL: 'postgres://localhost' }), 'REDIS_URL');
+  });
+
+  it('rejects a redis prefix containing whitespace', () => {
+    rejects(base({ REDIS_KEY_PREFIX: 'app redis' }), 'REDIS_KEY_PREFIX');
+  });
+
   it('does not police the admin password, which only the seed reads', () => {
     // Rejecting it here would stop an app that never seeds from booting; the
     // seeder states the length rule where it matters.
