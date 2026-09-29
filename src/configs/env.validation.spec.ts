@@ -424,6 +424,38 @@ describe('validateEnvironment', () => {
     rejects(base({ QUEUE_RETRY_ATTEMPTS: '0' }), 'QUEUE_RETRY_ATTEMPTS');
   });
 
+  it('rejects a retention age below a day, which would delete live data', () => {
+    // A zero here means "delete everything older than now": a typo becomes data
+    // loss rather than a failed deploy.
+    for (const name of [
+      'RETENTION_USERS_DAYS',
+      'RETENTION_EMAIL_TOKENS_DAYS',
+      'RETENTION_REFRESH_TOKENS_DAYS',
+      'RETENTION_AUDIT_LOGS_DAYS',
+    ]) {
+      rejects(base({ [name]: '0' }), name);
+    }
+  });
+
+  it('accepts a retention age of one day', () => {
+    expect(problemsFor(base({ RETENTION_USERS_DAYS: '1' }))).toEqual([]);
+  });
+
+  it('rejects a fractional retention age, which is not a day boundary', () => {
+    rejects(
+      base({ RETENTION_MAIL_LOGS_DAYS: '1.5' }),
+      'RETENTION_MAIL_LOGS_DAYS',
+    );
+  });
+
+  it('rejects a batch size of zero, which would never delete anything', () => {
+    rejects(base({ RETENTION_BATCH_SIZE: '0' }), 'RETENTION_BATCH_SIZE');
+  });
+
+  it('does not require retention settings, since the job is off by default', () => {
+    expect(problemsFor(production({}))).toEqual([]);
+  });
+
   it('does not police the admin password, which only the seed reads', () => {
     // Rejecting it here would stop an app that never seeds from booting; the
     // seeder states the length rule where it matters.

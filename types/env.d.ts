@@ -99,6 +99,23 @@ declare namespace NodeJS {
     QUEUE_IN_PROCESS_FALLBACK?: 'true' | 'false';
     QUEUE_IN_PROCESS_CONCURRENCY?: string;
 
+    // Retention. Off by default; every age is the policy from the plan, and the
+    // validation refuses an age below a day so a typo cannot delete fresh data.
+    RETENTION_ENABLED?: 'true' | 'false';
+    RETENTION_DRY_RUN?: 'true' | 'false';
+    RETENTION_SCHEDULE?: string;
+    RETENTION_BATCH_SIZE?: string;
+    RETENTION_BATCH_DELAY?: string;
+    RETENTION_RUN_TIMEOUT?: string;
+    RETENTION_USERS_DAYS?: string;
+    RETENTION_EMAIL_TOKENS_DAYS?: string;
+    RETENTION_RESET_TOKENS_DAYS?: string;
+    RETENTION_REFRESH_TOKENS_DAYS?: string;
+    RETENTION_MAIL_LOGS_DAYS?: string;
+    RETENTION_NOTIFICATION_LOGS_DAYS?: string;
+    RETENTION_LOGIN_ATTEMPTS_DAYS?: string;
+    RETENTION_AUDIT_LOGS_DAYS?: string;
+
     ADMIN_EMAIL?: string;
     ADMIN_PASSWORD?: string;
 

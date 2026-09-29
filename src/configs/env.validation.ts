@@ -23,6 +23,15 @@ const SQL_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const twoFactorEnabled = (value: string | undefined): boolean =>
   value !== 'false';
 
+/**
+ * A retention age, in days, never below one.
+ *
+ * A day is the floor rather than zero because a zero here means "delete
+ * everything older than now", which turns a typo into data loss instead of a
+ * failed deploy.
+ */
+const retentionDays = z.coerce.number().int().min(1);
+
 function createEnvSchema(strict: boolean) {
   const secret = strict
     ? z
@@ -182,6 +191,24 @@ function createEnvSchema(strict: boolean) {
         .int()
         .positive()
         .optional(),
+
+      // Retention. Every age is at least one day: a value of 0 or 1 would
+      // delete data that is still live, and a typo in a days field is the one
+      // mistake here that cannot be undone.
+      RETENTION_ENABLED: z.enum(['true', 'false']).optional(),
+      RETENTION_DRY_RUN: z.enum(['true', 'false']).optional(),
+      RETENTION_SCHEDULE: z.string().min(1).max(64).optional(),
+      RETENTION_BATCH_SIZE: z.coerce.number().int().positive().optional(),
+      RETENTION_BATCH_DELAY: z.coerce.number().nonnegative().optional(),
+      RETENTION_RUN_TIMEOUT: z.coerce.number().positive().optional(),
+      RETENTION_USERS_DAYS: retentionDays.optional(),
+      RETENTION_EMAIL_TOKENS_DAYS: retentionDays.optional(),
+      RETENTION_RESET_TOKENS_DAYS: retentionDays.optional(),
+      RETENTION_REFRESH_TOKENS_DAYS: retentionDays.optional(),
+      RETENTION_MAIL_LOGS_DAYS: retentionDays.optional(),
+      RETENTION_NOTIFICATION_LOGS_DAYS: retentionDays.optional(),
+      RETENTION_LOGIN_ATTEMPTS_DAYS: retentionDays.optional(),
+      RETENTION_AUDIT_LOGS_DAYS: retentionDays.optional(),
 
       // Only the seed reads the password, which states the length rule itself.
       // Rejecting it here would stop an app that never seeds from booting.
