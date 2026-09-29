@@ -98,13 +98,23 @@ describe('validateEnvironment', () => {
     ).toContain('- DATABASE_URL: must use one of: postgres:, postgresql:');
   });
 
-  it('reports a blank url as invalid and as the wrong protocol', () => {
-    // A blank value fails both checks, and saying so twice is more useful than
-    // either message alone.
-    expect(problemsFor(production({ DATABASE_URL: '   ' }))).toEqual([
-      '- DATABASE_URL: Invalid URL',
-      '- DATABASE_URL: must use one of: postgres:, postgresql:',
+  it('treats a blank variable as unset, not as an invalid value', () => {
+    // `.env.example` documents every optional as `KEY=`, so a blank has to
+    // mean "nothing here" or that file cannot be copied and edited.
+    expect(problemsFor(production({ CACHE_URL: '   ' }))).toEqual([]);
+  });
+
+  it('still requires a variable that is set to blank, when it is required', () => {
+    // Dropping the blank must not turn a required variable into an optional one.
+    expect(problemsFor(production({ APP_URL: '  ' }))).toEqual([
+      '- APP_URL: is required',
     ]);
+  });
+
+  it('does not let a blank credential satisfy a required one', () => {
+    expect(
+      problemsFor(base({ SLACK_ENABLED: 'true', SLACK_WEBHOOK_URL: '  ' })),
+    ).toEqual(['- SLACK_WEBHOOK_URL: is required when SLACK_ENABLED is true']);
   });
 
   it('rejects a cache url that is not a redis url', () => {
