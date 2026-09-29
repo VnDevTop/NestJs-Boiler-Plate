@@ -81,6 +81,24 @@ declare namespace NodeJS {
     DISCORD_WEBHOOK_URL?: string;
     DISCORD_CHANNEL?: string;
 
+    // Queue. bullmq is optional, so the queue is off until it is installed and
+    // this flag is set; the same processors then run in process.
+    QUEUE_ENABLED?: 'true' | 'false';
+    QUEUE_REDIS_URL?: string;
+    QUEUE_PREFIX?: string;
+    QUEUE_JOB_TIMEOUT?: string;
+    QUEUE_RETRY_ATTEMPTS?: string;
+    QUEUE_RETRY_DELAY?: string;
+    QUEUE_RETRY_MAX_DELAY?: string;
+    QUEUE_CONCURRENCY_MAIL?: string;
+    QUEUE_CONCURRENCY_NOTIFICATION?: string;
+    QUEUE_CONCURRENCY_MAINTENANCE?: string;
+    QUEUE_CONCURRENCY_DIGEST?: string;
+    QUEUE_REMOVE_COMPLETE_AFTER?: string;
+    QUEUE_REMOVE_FAIL_AFTER?: string;
+    QUEUE_IN_PROCESS_FALLBACK?: 'true' | 'false';
+    QUEUE_IN_PROCESS_CONCURRENCY?: string;
+
     ADMIN_EMAIL?: string;
     ADMIN_PASSWORD?: string;
 

@@ -389,6 +389,41 @@ describe('validateEnvironment', () => {
     rejects(base({ NOTIFICATION_RETRIES: '-1' }), 'NOTIFICATION_RETRIES');
   });
 
+  it('requires a redis url only when the queue is switched on', () => {
+    // The in-process fallback needs no redis, so requiring a url unconditionally
+    // would make the queue mandatory for an app that never uses it.
+    expect(problemsFor(base({ QUEUE_ENABLED: 'false' }))).toEqual([]);
+    expect(problemsFor(base({ QUEUE_ENABLED: 'true' }))).toEqual([
+      '- QUEUE_REDIS_URL: is required when QUEUE_ENABLED is true',
+    ]);
+  });
+
+  it('accepts an enabled queue with a redis url', () => {
+    expect(
+      problemsFor(
+        base({
+          QUEUE_ENABLED: 'true',
+          QUEUE_REDIS_URL: 'redis://localhost:6379/1',
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('rejects a queue url that is not a redis url', () => {
+    rejects(
+      base({ QUEUE_ENABLED: 'true', QUEUE_REDIS_URL: 'postgres://localhost' }),
+      'QUEUE_REDIS_URL',
+    );
+  });
+
+  it('rejects a queue concurrency of zero, which would stall every job', () => {
+    rejects(base({ QUEUE_CONCURRENCY_MAIL: '0' }), 'QUEUE_CONCURRENCY_MAIL');
+  });
+
+  it('rejects a retry count of zero, which would never retry', () => {
+    rejects(base({ QUEUE_RETRY_ATTEMPTS: '0' }), 'QUEUE_RETRY_ATTEMPTS');
+  });
+
   it('does not police the admin password, which only the seed reads', () => {
     // Rejecting it here would stop an app that never seeds from booting; the
     // seeder states the length rule where it matters.

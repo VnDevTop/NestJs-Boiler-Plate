@@ -148,6 +148,41 @@ function createEnvSchema(strict: boolean) {
         .optional(),
       DISCORD_CHANNEL: z.string().min(1).max(64).optional(),
 
+      // Queue. The url is required only when the queue is on, since the
+      // in-process fallback needs no redis at all.
+      QUEUE_ENABLED: z.enum(['true', 'false']).optional(),
+      QUEUE_REDIS_URL: z
+        .url()
+        .refine((value) => /^rediss?:/.test(value), {
+          message: 'must use one of: redis:, rediss:',
+        })
+        .optional(),
+      QUEUE_PREFIX: z.string().min(1).regex(/^\S+$/).optional(),
+      QUEUE_JOB_TIMEOUT: z.coerce.number().positive().optional(),
+      QUEUE_RETRY_ATTEMPTS: z.coerce.number().int().positive().optional(),
+      QUEUE_RETRY_DELAY: z.coerce.number().positive().optional(),
+      QUEUE_RETRY_MAX_DELAY: z.coerce.number().positive().optional(),
+      QUEUE_CONCURRENCY_MAIL: z.coerce.number().int().positive().optional(),
+      QUEUE_CONCURRENCY_NOTIFICATION: z.coerce
+        .number()
+        .int()
+        .positive()
+        .optional(),
+      QUEUE_CONCURRENCY_MAINTENANCE: z.coerce
+        .number()
+        .int()
+        .positive()
+        .optional(),
+      QUEUE_CONCURRENCY_DIGEST: z.coerce.number().int().positive().optional(),
+      QUEUE_REMOVE_COMPLETE_AFTER: z.coerce.number().nonnegative().optional(),
+      QUEUE_REMOVE_FAIL_AFTER: z.coerce.number().nonnegative().optional(),
+      QUEUE_IN_PROCESS_FALLBACK: z.enum(['true', 'false']).optional(),
+      QUEUE_IN_PROCESS_CONCURRENCY: z.coerce
+        .number()
+        .int()
+        .positive()
+        .optional(),
+
       // Only the seed reads the password, which states the length rule itself.
       // Rejecting it here would stop an app that never seeds from booting.
       ADMIN_EMAIL: z.email().optional(),
@@ -257,6 +292,17 @@ function createEnvSchema(strict: boolean) {
             });
           }
         }
+      }
+
+      // An enabled queue with no redis would fall back to running in process,
+      // which is a slower deployment rather than the intended one, and looks
+      // like a healthy app right up until traffic grows.
+      if (value.QUEUE_ENABLED === 'true' && !value.QUEUE_REDIS_URL) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['QUEUE_REDIS_URL'],
+          message: 'is required when QUEUE_ENABLED is true',
+        });
       }
     });
 }
