@@ -14,6 +14,10 @@ const PLACEHOLDER_SECRETS = new Set([
   'secret',
   'password',
   'change-me-in-production',
+  // The development value shipped in `.env.example`. A deployment that copies
+  // the file and forgets this one line would otherwise encrypt every stored TOTP
+  // secret with a key that is in the repository.
+  'dev-only-2fa-key-generate-your-own',
 ]);
 
 /** A Postgres schema name reaches DDL unquoted in places, so it is constrained. */
@@ -344,7 +348,11 @@ function createEnvSchema(strict: boolean) {
             });
           }
 
-          if (key && PLACEHOLDER_SECRETS.has(key)) {
+          // Rejected in production only. The other placeholder rules are strict
+          // because those variables are required everywhere; this one is
+          // deliberately allowed in development, since `.env.example` ships a
+          // usable development key and a fresh clone has to boot.
+          if (strict && key && PLACEHOLDER_SECRETS.has(key)) {
             ctx.addIssue({
               code: 'custom',
               path: ['TWO_FACTOR_ENCRYPTION_KEY'],

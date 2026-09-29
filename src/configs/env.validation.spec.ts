@@ -1,6 +1,30 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { validateEnvironment } from './env.validation.js';
+
+/**
+ * The documented environment, parsed the way `ConfigModule` parses it.
+ *
+ * `.env.example` is the file every clone copies, so a value it ships must pass
+ * validation. This is the test that catches an example value drifting out of
+ * step with the rules that reject example values.
+ */
+function exampleEnv(): Record<string, unknown> {
+  const raw = readFileSync(join(process.cwd(), '.env.example'), 'utf8');
+
+  return Object.fromEntries(
+    raw
+      .split('\n')
+      .filter((line) => line.trim() && !line.trim().startsWith('#'))
+      .map((line) => {
+        const index = line.indexOf('=');
+        return [line.slice(0, index).trim(), line.slice(index + 1).trim()];
+      }),
+  );
+}
 
 /** A configuration that passes in development, so each test can break one thing. */
 function base(
@@ -49,6 +73,31 @@ function rejects(config: Record<string, unknown>, variable: string): void {
 }
 
 describe('validateEnvironment', () => {
+  it('accepts .env.example as copied, in development', () => {
+    // The regression this guards: .env.example shipped TWO_FACTOR_ENCRYPTION_KEY
+    // as `change-me`, which the placeholder rules reject, so a fresh clone could
+    // not boot from its own example file.
+    expect(() => validateEnvironment(exampleEnv())).not.toThrow();
+  });
+
+  it('rejects the example 2fa key once the example file reaches production', () => {
+    // The counterpart to the test above: usable in development, never in
+    // production, because a key in the repository is not a secret.
+    const example = exampleEnv();
+
+    expect(() =>
+      validateEnvironment({
+        ...example,
+        NODE_ENV: 'production',
+        JWT_SECRET: 'a'.repeat(32),
+        JWT_REFRESH_SECRET: 'b'.repeat(32),
+        APP_URL: 'https://app.example.com',
+        MAIL_FROM: 'no-reply@example.com',
+        MAIL_TRANSPORT: 'smtp',
+      }),
+    ).toThrow(/TWO_FACTOR_ENCRYPTION_KEY/);
+  });
+
   it('accepts a development configuration with placeholder secrets', () => {
     expect(() => validateEnvironment(base())).not.toThrow();
   });
@@ -253,6 +302,31 @@ describe('validateEnvironment', () => {
     expect(
       problemsFor(production({ TWO_FACTOR_ENCRYPTION_KEY: 'change-me' })),
     ).toEqual(['- TWO_FACTOR_ENCRYPTION_KEY: still holds the example value']);
+  });
+
+  it('rejects the development 2fa key in production', () => {
+    // This is the value .env.example ships, so a deploy that copies the file and
+    // changes nothing else would otherwise encrypt every stored TOTP secret with
+    // a key that is in the repository.
+    expect(
+      problemsFor(
+        production({
+          TWO_FACTOR_ENCRYPTION_KEY: 'dev-only-2fa-key-generate-your-own',
+        }),
+      ),
+    ).toEqual(['- TWO_FACTOR_ENCRYPTION_KEY: still holds the example value']);
+  });
+
+  it('accepts the development 2fa key outside production', () => {
+    // A fresh clone has to boot from .env.example without editing anything else,
+    // which is why this rule is strict-only.
+    expect(
+      problemsFor(
+        base({
+          TWO_FACTOR_ENCRYPTION_KEY: 'dev-only-2fa-key-generate-your-own',
+        }),
+      ),
+    ).toEqual([]);
   });
 
   it('requires a cache url for a shared cache backend', () => {
