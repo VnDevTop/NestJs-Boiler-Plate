@@ -210,6 +210,26 @@ function createEnvSchema(strict: boolean) {
       RETENTION_LOGIN_ATTEMPTS_DAYS: retentionDays.optional(),
       RETENTION_AUDIT_LOGS_DAYS: retentionDays.optional(),
 
+      // Password policy. The bounds are the interesting part: a minimum below
+      // the DTOs current value would silently weaken a deployed app. The
+      // maximum is a bound on work, not on the hash: scrypt has no 72 byte
+      // truncation, so the only reason to cap it is to stop a request carrying
+      // a megabyte of password from tying up a hash.
+      PASSWORD_MIN_LENGTH: z.coerce.number().int().min(8).max(128).optional(),
+      PASSWORD_MAX_LENGTH: z.coerce.number().int().min(8).max(1024).optional(),
+      PASSWORD_REQUIRE_LOWERCASE: z.enum(['true', 'false']).optional(),
+      PASSWORD_REQUIRE_UPPERCASE: z.enum(['true', 'false']).optional(),
+      PASSWORD_REQUIRE_NUMBER: z.enum(['true', 'false']).optional(),
+      PASSWORD_REQUIRE_SYMBOL: z.enum(['true', 'false']).optional(),
+      PASSWORD_HISTORY_COUNT: z.coerce.number().int().nonnegative().optional(),
+      PASSWORD_CHECK_BREACH_LIST: z.enum(['true', 'false']).optional(),
+      LOGIN_MAX_FAILED_ATTEMPTS: z.coerce
+        .number()
+        .int()
+        .nonnegative()
+        .optional(),
+      LOGIN_LOCKOUT_DURATION: z.coerce.number().int().positive().optional(),
+
       // Only the seed reads the password, which states the length rule itself.
       // Rejecting it here would stop an app that never seeds from booting.
       ADMIN_EMAIL: z.email().optional(),
@@ -329,6 +349,20 @@ function createEnvSchema(strict: boolean) {
           code: 'custom',
           path: ['QUEUE_REDIS_URL'],
           message: 'is required when QUEUE_ENABLED is true',
+        });
+      }
+
+      // A minimum above the maximum is a policy that rejects every password,
+      // which reads as a broken signup form rather than a configuration error.
+      if (
+        value.PASSWORD_MIN_LENGTH !== undefined &&
+        value.PASSWORD_MAX_LENGTH !== undefined &&
+        value.PASSWORD_MIN_LENGTH > value.PASSWORD_MAX_LENGTH
+      ) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['PASSWORD_MAX_LENGTH'],
+          message: 'must be at least PASSWORD_MIN_LENGTH',
         });
       }
     });

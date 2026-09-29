@@ -116,6 +116,19 @@ declare namespace NodeJS {
     RETENTION_LOGIN_ATTEMPTS_DAYS?: string;
     RETENTION_AUDIT_LOGS_DAYS?: string;
 
+    // Password policy. The defaults match the @MinLength(8) the auth DTOs
+    // enforce today, so nothing tightens or loosens before Phase 19 reads them.
+    PASSWORD_MIN_LENGTH?: string;
+    PASSWORD_MAX_LENGTH?: string;
+    PASSWORD_REQUIRE_LOWERCASE?: 'true' | 'false';
+    PASSWORD_REQUIRE_UPPERCASE?: 'true' | 'false';
+    PASSWORD_REQUIRE_NUMBER?: 'true' | 'false';
+    PASSWORD_REQUIRE_SYMBOL?: 'true' | 'false';
+    PASSWORD_HISTORY_COUNT?: string;
+    PASSWORD_CHECK_BREACH_LIST?: 'true' | 'false';
+    LOGIN_MAX_FAILED_ATTEMPTS?: string;
+    LOGIN_LOCKOUT_DURATION?: string;
+
     ADMIN_EMAIL?: string;
     ADMIN_PASSWORD?: string;
 

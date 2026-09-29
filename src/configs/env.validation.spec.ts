@@ -456,6 +456,43 @@ describe('validateEnvironment', () => {
     expect(problemsFor(production({}))).toEqual([]);
   });
 
+  it('rejects a minimum password length below what the auth DTOs enforce', () => {
+    // 8 is the hard-coded @MinLength in register.dto and login.dto, so a
+    // smaller value here would look configured while changing nothing, and a
+    // deploy could read it as an intentional loosening.
+    rejects(base({ PASSWORD_MIN_LENGTH: '4' }), 'PASSWORD_MIN_LENGTH');
+  });
+
+  it('rejects a maximum password length that is pure work for the server', () => {
+    // scrypt has no 72 byte truncation, so the cap is not about the hash
+    // ignoring a tail. It stops a request carrying a megabyte of password from
+    // occupying a hash for long enough to matter.
+    rejects(base({ PASSWORD_MAX_LENGTH: '100000' }), 'PASSWORD_MAX_LENGTH');
+  });
+
+  it('rejects a minimum above the maximum, which would reject every password', () => {
+    rejects(
+      base({ PASSWORD_MIN_LENGTH: '20', PASSWORD_MAX_LENGTH: '10' }),
+      'PASSWORD_MAX_LENGTH',
+    );
+  });
+
+  it('accepts a minimum equal to the maximum', () => {
+    expect(
+      problemsFor(
+        base({ PASSWORD_MIN_LENGTH: '12', PASSWORD_MAX_LENGTH: '12' }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('allows the lockout to be disabled with zero', () => {
+    expect(problemsFor(base({ LOGIN_MAX_FAILED_ATTEMPTS: '0' }))).toEqual([]);
+  });
+
+  it('rejects a non-positive lockout duration, which would lock forever', () => {
+    rejects(base({ LOGIN_LOCKOUT_DURATION: '0' }), 'LOGIN_LOCKOUT_DURATION');
+  });
+
   it('does not police the admin password, which only the seed reads', () => {
     // Rejecting it here would stop an app that never seeds from booting; the
     // seeder states the length rule where it matters.
