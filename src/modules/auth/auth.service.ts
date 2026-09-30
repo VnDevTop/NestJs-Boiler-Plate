@@ -1,15 +1,21 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 
 import { JwtPayload, RequestUser } from '../../common/interfaces/index.js';
 import { hashPassword, verifyPassword } from '../../common/utils/index.js';
+import type { AppConfig } from '../../configs/app.config.js';
+import { MailService } from '../mail/index.js';
 import { UserResponseDto } from '../users/dto/index.js';
 import { UsersService } from '../users/index.js';
 import {
+  ForgotPasswordDto,
+  GenericMessageDto,
   LoginDto,
   LogoutDto,
   RefreshTokenDto,
   RegisterDto,
+  ResetPasswordDto,
   TwoFactorCodeDto,
   TwoFactorEnabledResponseDto,
   TwoFactorLoginDto,
@@ -18,6 +24,7 @@ import {
 import { RefreshTokenRevokedReason } from './enums/index.js';
 import { RefreshTokenService } from './refresh-token.service.js';
 import { DeviceService } from './device.service.js';
+import { PasswordResetService } from './password-reset.service.js';
 import { TwoFactorService } from './two-factor.service.js';
 import {
   AuthToken,
@@ -43,7 +50,14 @@ export class AuthService {
     private readonly refreshTokenService: RefreshTokenService,
     private readonly deviceService: DeviceService,
     private readonly twoFactorService: TwoFactorService,
+    private readonly passwordResetService: PasswordResetService,
+    private readonly mailService: MailService,
+    private readonly configService: ConfigService,
   ) {}
+
+  private get appConfig(): AppConfig {
+    return this.configService.getOrThrow<AppConfig>('app');
+  }
 
   async register(
     registerDto: RegisterDto,
@@ -96,6 +110,72 @@ export class AuthService {
     const { token } = await this.issueSession(user.id, metadata);
 
     return this.createAuthToken(userResponse, token);
+  }
+
+  /**
+   * Starts a password reset.
+   *
+   * The answer is identical whether or not the address exists, and so is the
+   * work done before the branch: one email lookup and one hash, in both cases.
+   * That is the part a "did they find the account" timing attack looks for, and
+   * it is why the lookup result is not returned to the caller.
+   */
+  async forgotPassword(
+    forgotPasswordDto: ForgotPasswordDto,
+    ipAddress: string,
+  ): Promise<GenericMessageDto> {
+    const generic = new GenericMessageDto();
+    generic.message =
+      'If an account exists for that address, a reset link is on its way.';
+
+    const user = await this.usersService.findByEmail(forgotPasswordDto.email);
+
+    if (!user || !user.isActive) {
+      // No mail is sent, so the generic message is a promise the caller cannot
+      // check from outside except by the absence of mail.
+      return generic;
+    }
+
+    const { token, expiresAt } = await this.passwordResetService.issue(
+      user,
+      ipAddress,
+    );
+
+    const minutes = Math.round((expiresAt.getTime() - Date.now()) / 60_000);
+
+    // Not awaited: a provider that hangs must not hold the request open, and a
+    // failure here is logged rather than turned into a failed reset. The token
+    // is already stored, so the user can request another.
+    void this.mailService
+      .sendTemplate(user.email, 'reset-password', {
+        resetUrl: this.mailService.buildUrl(
+          `/auth/reset-password?token=${encodeURIComponent(token)}`,
+        ),
+        ip: ipAddress,
+        expiresInMinutes: minutes,
+        appName: this.appConfig.name,
+      })
+      .catch(() => undefined);
+
+    return generic;
+  }
+
+  /**
+   * Finishes a password reset: changes the password, spends the token and kills
+   * every other session, in one transaction.
+   */
+  async resetPassword(
+    resetPasswordDto: ResetPasswordDto,
+  ): Promise<GenericMessageDto> {
+    await this.passwordResetService.consume(
+      resetPasswordDto.token,
+      resetPasswordDto.newPassword,
+    );
+
+    const generic = new GenericMessageDto();
+    generic.message = 'Your password has been changed. Sign in again.';
+
+    return generic;
   }
 
   /**

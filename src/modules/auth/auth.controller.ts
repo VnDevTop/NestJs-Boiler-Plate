@@ -19,8 +19,11 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiTooManyRequestsResponse,
   ApiTags,
   ApiUnauthorizedResponse,
+  ApiBadRequestResponse,
+  ApiAcceptedResponse,
   getSchemaPath,
 } from '@nestjs/swagger';
 
@@ -37,10 +40,13 @@ import type { RequestUser } from '../../common/interfaces/index.js';
 import { UserResponseDto } from '../users/dto/index.js';
 import {
   AuthTokenResponseDto,
+  ForgotPasswordDto,
+  GenericMessageDto,
   LoginDto,
   LogoutDto,
   RefreshTokenDto,
   RegisterDto,
+  ResetPasswordDto,
   TwoFactorChallengeResponseDto,
   TwoFactorCodeDto,
   TwoFactorEnabledResponseDto,
@@ -190,6 +196,57 @@ export class AuthController {
 
   @Throttle({ default: { limit: 20, ttl: 60000 } })
   @Public()
+  /**
+   * Always 202, never 200 or 404.
+   *
+   * The status is the same for a known and an unknown address on purpose. A
+   * different status for a miss is an account enumeration oracle that needs no
+   * timing analysis to read.
+   */
+  @Throttle({ default: { limit: 3, ttl: 3600000 } })
+  @Public()
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: 'Request a password reset link',
+    description:
+      'Always returns 202 with the same message, whether or not an account ' +
+      'exists for the address. Check the mailbox rather than the response.',
+  })
+  @ApiAcceptedResponse({ type: GenericMessageDto })
+  @ApiTooManyRequestsResponse({
+    description: 'Too many reset requests from this address',
+  })
+  forgotPassword(
+    @Body() forgotPasswordDto: ForgotPasswordDto,
+    @Ip() ipAddress: string,
+  ): Promise<GenericMessageDto> {
+    return this.authService.forgotPassword(forgotPasswordDto, ipAddress);
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 3600000 } })
+  @Public()
+  @Post('reset-password')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: 'Set a new password with a reset token',
+    description:
+      'The token is single use. On success every other session is signed out, ' +
+      'including this device.',
+  })
+  @ApiAcceptedResponse({ type: GenericMessageDto })
+  @ApiBadRequestResponse({
+    description: 'The token is unknown, already used or expired',
+  })
+  @ApiTooManyRequestsResponse({
+    description: 'Too many attempts',
+  })
+  resetPassword(
+    @Body() resetPasswordDto: ResetPasswordDto,
+  ): Promise<GenericMessageDto> {
+    return this.authService.resetPassword(resetPasswordDto);
+  }
+
   @Post('refresh-token')
   @ApiOperation({
     summary: 'Exchange a refresh token for a new token pair',

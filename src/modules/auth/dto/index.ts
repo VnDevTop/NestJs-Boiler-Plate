@@ -1,3 +1,6 @@
+export * from './reset-password.dto.js';
+export * from './generic-message.dto.js';
+export * from './forgot-password.dto.js';
 export * from './auth-token-response.dto.js';
 export * from './login.dto.js';
 export * from './logout.dto.js';
