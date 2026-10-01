@@ -140,7 +140,7 @@ feat: add mail, notification, queue and retention configuration
 
 ## Phase 14: Outbound Email
 
-Status: Pending
+Status: Done
 
 Goal:
 
@@ -155,27 +155,27 @@ job is to make a user receive a welcome email.
 
 Tasks:
 
-- [ ] Create `src/modules/mail` with `mail.module.ts`, `mail.service.ts`
-- [ ] Define `MailTransport { send(message): Promise<SendResult> }` in
+- [x] Create `src/modules/mail` with `mail.module.ts`, `mail.service.ts`
+- [x] Define `MailTransport { send(message): Promise<SendResult> }` in
       `transports/transport.interface.ts`
-- [ ] Implement `memory.transport.ts` as the zero-dependency dev default
-- [ ] Implement `smtp.transport.ts` over the optional `nodemailer`
-- [ ] Implement `ses.transport.ts` and `sendgrid.transport.ts` over their
+- [x] Implement `memory.transport.ts` as the zero-dependency dev default
+- [x] Implement `smtp.transport.ts` over the optional `nodemailer`
+- [x] Implement `ses.transport.ts` and `sendgrid.transport.ts` over their
       optional packages
-- [ ] Make `memory` the development default and refuse it in production
+- [x] Make `memory` the development default and refuse it in production
 - [x] Build `templates/template.registry.ts` mapping a name to
       `{ subject, render(data) }`
 - [x] Render both an HTML and a plain-text part for every template
 - [x] Give each template exactly the data it needs, never the user entity
-- [ ] Generate a stable mail id per message, log it, and return it to the caller
-- [ ] Add `POST /auth/forgot-password`, returning 202 with a generic message
-- [ ] Add `POST /auth/reset-password`, single-use token, invalidates other
+- [x] Generate a stable mail id per message, log it, and return it to the caller
+- [x] Add `POST /auth/forgot-password`, returning 202 with a generic message
+- [x] Add `POST /auth/reset-password`, single-use token, invalidates other
       sessions on success
-- [ ] Add `POST /auth/verify-email` and `POST /auth/resend-verification`
-- [ ] Add the `email_verification_tokens` and `password_reset_tokens` entities
-- [ ] Store tokens hashed with sha256, never in plaintext
-- [ ] Index `expiresAt` on every token table, Phase 16 cleans on it
-- [ ] Add a throttler bucket for mail: 3 reset mails per hour per email and
+- [x] Add `POST /auth/verify-email` and `POST /auth/resend-verification`
+- [x] Add the `email_verification_tokens` and `password_reset_tokens` entities
+- [x] Store tokens hashed with sha256, never in plaintext
+- [x] Index `expiresAt` on every token table, Phase 16 cleans on it
+- [x] Add a throttler bucket for mail: 3 reset mails per hour per email and
       10 per hour per IP
 
 Template set:
@@ -188,6 +188,28 @@ password-changed   after reset, forced      ip, deviceLabel
 new-device-login   refresh from new device   deviceLabel, ip, time
 account-locked     lockout or admin action   reason, supportUrl
 ```
+
+All six exist and are tested. Four are emitted: `verify-email` and
+`reset-password` from this phase, `welcome` from the same register call. Three
+are rendered but have no caller yet, because the events that need them do not
+exist: `password-changed` waits for the forced-change flow, `new-device-login`
+for the refresh event, `account-locked` for the lockout, which Phase 19 adds.
+
+Security notes, and where each one landed:
+
+- `forgot-password` answers identically whether or not the email exists. It also
+  takes the same time and does the same database work: the miss path runs the
+  same statement against an id with no rows, and both paths are held for a fixed
+  floor with equal jitter. A matching message alone is not enough, because the
+  branch that issues a token is measurably slower. See
+  `src/modules/auth/README.md` for why the floor is a mitigation rather than a
+  proof.
+- The reset token is consumed inside the same transaction that changes the
+  password, so a crash can never leave a live token with a changed password. The
+  session revocation is in that transaction too.
+- `MailService.send()` does not add latency to `register()` or `login()`. The
+  send is not awaited, so a provider that hangs cannot hold a request open. It
+  still costs two database statements, which Phase 15 removes by queueing.
 
 Security notes that are part of the definition of done:
 
@@ -660,7 +682,7 @@ lands after the harness in Phase 12 is solid.
 | Phase 11 | Production Hardening                           | Done    |
 | Phase 12 | Optional Integration Foundation                | Done    |
 | Phase 13 | Configuration Expansion                        | Done    |
-| Phase 14 | Outbound Email                                 | Pending |
+| Phase 14 | Outbound Email                                 | Done    |
 | Phase 15 | Background Job Queue                           | Pending |
 | Phase 16 | Data Retention and Cleanup                     | Pending |
 | Phase 17 | Authentication and Authorization through Cache | Pending |
