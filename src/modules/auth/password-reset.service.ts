@@ -84,6 +84,23 @@ export class PasswordResetService {
   }
 
   /**
+   * Marks every unspent token for a user as spent.
+   *
+   * Exposed on its own because the miss path of `forgot-password` calls it with
+   * an id that has no rows, purely to make the statement cost the same. That is
+   * the point: the branch that finds no user has to do the same database work as
+   * the branch that does, or the difference is an enumeration oracle that needs
+   * no timing statistics to read.
+   */
+  async spendOutstandingFor(userId: string): Promise<void> {
+    await this.store.update(
+      PasswordResetToken,
+      { userId, usedAt: IsNull() },
+      { usedAt: new Date() },
+    );
+  }
+
+  /**
    * Whether a token could be used, without using it.
    *
    * The result is a boolean rather than the row, because the caller answering

@@ -1,9 +1,15 @@
+import { randomUUID } from 'node:crypto';
+
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 
 import { JwtPayload, RequestUser } from '../../common/interfaces/index.js';
-import { hashPassword, verifyPassword } from '../../common/utils/index.js';
+import {
+  hashPassword,
+  padResponse,
+  verifyPassword,
+} from '../../common/utils/index.js';
 import type { AppConfig } from '../../configs/app.config.js';
 import { MailService } from '../mail/index.js';
 import { UserResponseDto } from '../users/dto/index.js';
@@ -149,6 +155,7 @@ export class AuthService {
     resendVerificationDto: ResendVerificationDto,
     ipAddress: string,
   ): Promise<GenericMessageDto> {
+    const startedAt = Date.now();
     const generic = new GenericMessageDto();
     generic.message =
       'If that address needs confirming, a new link is on its way.';
@@ -158,7 +165,11 @@ export class AuthService {
     );
 
     if (!user || !user.isActive || user.isEmailVerified) {
-      return generic;
+      // Same statement as the real branch, against an id with no rows, so the
+      // three outcomes cost the same and not merely answer the same.
+      await this.emailVerificationService.spendOutstandingFor(randomUUID());
+
+      return this.padded(generic, startedAt);
     }
 
     const { token, expiresAt } = await this.emailVerificationService.issue(
@@ -179,7 +190,7 @@ export class AuthService {
       })
       .catch(() => undefined);
 
-    return generic;
+    return this.padded(generic, startedAt);
   }
 
   /**
@@ -229,6 +240,7 @@ export class AuthService {
     forgotPasswordDto: ForgotPasswordDto,
     ipAddress: string,
   ): Promise<GenericMessageDto> {
+    const startedAt = Date.now();
     const generic = new GenericMessageDto();
     generic.message =
       'If an account exists for that address, a reset link is on its way.';
@@ -236,9 +248,12 @@ export class AuthService {
     const user = await this.usersService.findByEmail(forgotPasswordDto.email);
 
     if (!user || !user.isActive) {
-      // No mail is sent, so the generic message is a promise the caller cannot
-      // check from outside except by the absence of mail.
-      return generic;
+      // The same statement the real branch runs, against an id with no rows, so
+      // both branches pay for the same query. Without it the miss is measurably
+      // cheaper and the response time alone answers the question.
+      await this.passwordResetService.spendOutstandingFor(randomUUID());
+
+      return this.padded(generic, startedAt);
     }
 
     const { token, expiresAt } = await this.passwordResetService.issue(
@@ -262,7 +277,21 @@ export class AuthService {
       })
       .catch(() => undefined);
 
-    return generic;
+    return this.padded(generic, startedAt);
+  }
+
+  /**
+   * Holds an account-existence response for a fixed minimum.
+   *
+   * The message being identical is not sufficient on its own: the branch that
+   * issues a token does more work, and an attacker sorting a batch of guesses by
+   * response time finds the registered addresses without any clever analysis.
+   * Both outcomes wait for the same floor, with the same jitter applied to both.
+   */
+  protected async padded<T>(response: T, startedAt: number): Promise<T> {
+    await padResponse({ startedAt });
+
+    return response;
   }
 
   /**

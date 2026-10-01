@@ -53,6 +53,7 @@ function harness(
       expiresAt: new Date(Date.now() + 24 * 3_600_000),
     }),
     verify: vi.fn().mockResolvedValue({ id: 'user-1' }),
+    spendOutstandingFor: vi.fn().mockResolvedValue(undefined),
   };
 
   const mailService = {
@@ -80,7 +81,15 @@ function harness(
     decode: vi.fn().mockReturnValue({ iat: 1_000, exp: 1_900 }),
   };
 
-  const service = new AuthService(
+  // The padding is exercised in timing.util.spec.ts and in the enumeration tests
+  // below; here it is removed so the suite does not spend 250ms per call.
+  class TestableAuthService extends AuthService {
+    protected override async padded<T>(response: T): Promise<T> {
+      return response;
+    }
+  }
+
+  const service = new TestableAuthService(
     jwtService as never,
     usersService as never,
     { issue: vi.fn().mockResolvedValue({ token: 'r' }) } as never,

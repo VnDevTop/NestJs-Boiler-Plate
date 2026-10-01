@@ -61,11 +61,7 @@ export class EmailVerificationService {
     const token = randomBytes(32).toString('base64url');
     const expiresAt = new Date(Date.now() + this.ttlMs);
 
-    await this.store.update(
-      EmailVerificationToken,
-      { userId: user.id, usedAt: IsNull() },
-      { usedAt: new Date() },
-    );
+    await this.spendOutstandingFor(user.id);
 
     await this.store.save(
       this.store.create(EmailVerificationToken, {
@@ -142,6 +138,20 @@ export class EmailVerificationService {
 
       return user;
     });
+  }
+
+  /**
+   * Marks every unspent token for a user as spent.
+   *
+   * Called with a non-existent id on the miss path of `resend-verification`, so
+   * that branch costs the same database work as the branch that finds a user.
+   */
+  async spendOutstandingFor(userId: string): Promise<void> {
+    await this.store.update(
+      EmailVerificationToken,
+      { userId, usedAt: IsNull() },
+      { usedAt: new Date() },
+    );
   }
 
   /**
