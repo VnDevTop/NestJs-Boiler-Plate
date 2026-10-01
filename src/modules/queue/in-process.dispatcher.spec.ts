@@ -1,6 +1,6 @@
 import type { ConfigService } from '@nestjs/config';
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { QueueConfig } from '../../configs/queue.config.js';
 import {
@@ -29,7 +29,10 @@ interface Counters {
   peak: number;
 }
 
-function build(behaviour: (job: Job, attempt: number) => Promise<JobResult>) {
+function build(
+  behaviour: (job: Job, attempt: number) => Promise<JobResult>,
+  deadLetter?: unknown,
+) {
   const counters: Counters = { calls: [], concurrent: 0, peak: 0 };
   const attempts = new WeakMap<Job, number>();
 
@@ -55,7 +58,11 @@ function build(behaviour: (job: Job, attempt: number) => Promise<JobResult>) {
   } as unknown as ConfigService;
 
   return {
-    dispatcher: new InProcessDispatcher(configService, processors),
+    dispatcher: new InProcessDispatcher(
+      configService,
+      processors,
+      deadLetter as never,
+    ),
     counters,
   };
 }
@@ -278,6 +285,51 @@ describe('InProcessDispatcher retry', () => {
     await settle(150);
 
     expect(counters.calls).toHaveLength(3);
+  });
+
+  it('sends an exhausted job to the dead letter, with the attempt count', async () => {
+    const record = vi.fn().mockResolvedValue(true);
+    const deadLetter = { record, size: vi.fn() } as never;
+    const { dispatcher } = build(
+      async () => ({ ok: false, error: 'ETIMEDOUT', retryable: true }),
+      deadLetter,
+    );
+
+    await dispatcher.enqueue('mail', job);
+    await settle(150);
+
+    // Without this the only record of a permanently lost email is a log line
+    // nobody is watching.
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record.mock.calls[0][1]).toMatchObject({ error: 'ETIMEDOUT' });
+    expect(record.mock.calls[0][2]).toBe(3);
+  });
+
+  it('sends a permanent failure to the dead letter without retrying first', async () => {
+    const record = vi.fn().mockResolvedValue(true);
+    const { dispatcher, counters } = build(
+      async () => ({ ok: false, error: 'bad key', retryable: false }),
+      { record, size: vi.fn() } as never,
+    );
+
+    await dispatcher.enqueue('mail', job);
+    await settle(80);
+
+    expect(counters.calls).toHaveLength(1);
+    expect(record).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not dead-letter a job that succeeded', async () => {
+    const record = vi.fn().mockResolvedValue(true);
+    const { dispatcher } = build(async () => ok, {
+      record,
+      size: vi.fn(),
+    } as never);
+
+    await dispatcher.enqueue('mail', job);
+    await settle(40);
+
+    expect(record).not.toHaveBeenCalled();
   });
 
   it('does not retry a malformed payload, which cannot become valid', async () => {

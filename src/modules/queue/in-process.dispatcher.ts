@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 
 import type { QueueConfig } from '../../configs/queue.config.js';
 import type { Job, JobQueue, JobResult, QueueName } from './queue.interface.js';
+import type { DeadLetterService } from './dead-letter.service.js';
 import { backoffDelay } from './retry.policy.js';
 import {
   MailProcessor,
@@ -41,6 +42,7 @@ export class InProcessDispatcher implements JobQueue, OnModuleDestroy {
   constructor(
     private readonly configService: ConfigService,
     private readonly processors: ProcessorRegistry,
+    private readonly deadLetter?: DeadLetterService,
   ) {}
 
   private get config(): QueueConfig {
@@ -180,6 +182,7 @@ export class InProcessDispatcher implements JobQueue, OnModuleDestroy {
         `Job ${entry.job.name} failed permanently after ${entry.attempt} attempt(s): ` +
           `${result.error ?? 'no reason given'}`,
       );
+      await this.deadLetter?.record(entry.job, result, entry.attempt);
 
       return;
     }
@@ -189,6 +192,7 @@ export class InProcessDispatcher implements JobQueue, OnModuleDestroy {
         `Job ${entry.job.name} exhausted its ${this.config.retry.attempts} attempts: ` +
           `${result.error ?? 'no reason given'}`,
       );
+      await this.deadLetter?.record(entry.job, result, entry.attempt);
 
       return;
     }

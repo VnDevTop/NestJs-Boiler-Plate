@@ -1,4 +1,7 @@
 export * from './bullmq.dispatcher.js';
+export * from './dead-letter.service.js';
+export * from './dedupe-key.js';
+export * from './dedupe.guard.js';
 export * from './in-process.dispatcher.js';
 export * from './processors/mail.processor.js';
 export * from './queue.interface.js';

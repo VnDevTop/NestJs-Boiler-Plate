@@ -150,6 +150,36 @@ describe('RedisClientService connection', () => {
   });
 });
 
+describe('RedisClientService key namespacing', () => {
+  it('prefixes every key with the redis namespace', async () => {
+    const client = fakeClient();
+    const { service } = build(() => client);
+
+    await service.setIfAbsent('dedupe:abc', 'v', 60);
+    await service.release('dedupe:abc');
+    await service.pushToList('dead', 'entry');
+    await service.listLength('dead');
+
+    // The raw client does not namespace anything; keyv does, and cache.module
+    // uses keyv. Without this prefix the queue keys land beside the cache keys on
+    // a shared server, which is the collision the separate namespace prevents.
+    const calledKeys = [
+      client.set,
+      client.del,
+      client.lPush,
+      client.lTrim,
+      client.lLen,
+    ].map(
+      (call) => (call as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0],
+    );
+
+    expect(calledKeys).toHaveLength(5);
+    for (const key of calledKeys) {
+      expect(key).toMatch(/^app:redis:/);
+    }
+  });
+});
+
 describe('RedisClientService.setIfAbsent', () => {
   it('is true when the key was set, so this caller does the work', async () => {
     const client = fakeClient();
@@ -171,10 +201,11 @@ describe('RedisClientService.setIfAbsent', () => {
 
     await service.setIfAbsent('mail:a@x.com:welcome', 'v', 120);
 
-    expect(client.set).toHaveBeenCalledWith('mail:a@x.com:welcome', 'v', {
-      NX: true,
-      EX: 120,
-    });
+    expect(client.set).toHaveBeenCalledWith(
+      'app:redis:mail:a@x.com:welcome',
+      'v',
+      { NX: true, EX: 120 },
+    );
   });
 
   it('rounds a sub-second ttl up to one, because EX 0 is an error', async () => {
@@ -183,7 +214,10 @@ describe('RedisClientService.setIfAbsent', () => {
 
     await service.setIfAbsent('k', 'v', 0);
 
-    expect(client.set).toHaveBeenCalledWith('k', 'v', { NX: true, EX: 1 });
+    expect(client.set).toHaveBeenCalledWith('app:redis:k', 'v', {
+      NX: true,
+      EX: 1,
+    });
   });
 
   it('rounds a fractional ttl up, so it never expires early', async () => {
@@ -192,7 +226,10 @@ describe('RedisClientService.setIfAbsent', () => {
 
     await service.setIfAbsent('k', 'v', 59.2);
 
-    expect(client.set).toHaveBeenCalledWith('k', 'v', { NX: true, EX: 60 });
+    expect(client.set).toHaveBeenCalledWith('app:redis:k', 'v', {
+      NX: true,
+      EX: 60,
+    });
   });
 });
 
@@ -228,8 +265,8 @@ describe('RedisClientService.pushToList', () => {
 
     await service.pushToList('dead', 'entry', 100);
 
-    expect(client.lPush).toHaveBeenCalledWith('dead', 'entry');
-    expect(client.lTrim).toHaveBeenCalledWith('dead', 0, 99);
+    expect(client.lPush).toHaveBeenCalledWith('app:redis:dead', 'entry');
+    expect(client.lTrim).toHaveBeenCalledWith('app:redis:dead', 0, 99);
   });
 
   it('keeps at least one entry when the bound is nonsense', async () => {
@@ -238,7 +275,7 @@ describe('RedisClientService.pushToList', () => {
 
     await service.pushToList('dead', 'entry', 0);
 
-    expect(client.lTrim).toHaveBeenCalledWith('dead', 0, 0);
+    expect(client.lTrim).toHaveBeenCalledWith('app:redis:dead', 0, 0);
   });
 
   it('is false when redis is down, so the caller can log it as a secondary loss', async () => {

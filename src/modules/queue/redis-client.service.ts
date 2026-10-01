@@ -56,6 +56,18 @@ export class RedisClientService implements OnModuleDestroy {
   }
 
   /**
+   * Every key this service writes, inside the configured namespace.
+   *
+   * The prefix is applied here rather than in each caller because the raw client
+   * does not: `cache.module.ts` gets its namespacing from keyv, so without this
+   * the queue keys would land next to the cache keys on a shared server, which is
+   * the collision the separate `redis` namespace exists to prevent.
+   */
+  private key(name: string): string {
+    return `${this.config.keyPrefix}:${name}`;
+  }
+
+  /**
    * True when a client is connected. For the health check, which reports this as
    * degraded rather than down: the app is still serving.
    */
@@ -128,7 +140,7 @@ export class RedisClientService implements OnModuleDestroy {
     ttlSeconds: number,
   ): Promise<boolean | null> {
     return this.run(async (client) => {
-      const result = await client.set(key, value, {
+      const result = await client.set(this.key(key), value, {
         NX: true,
         EX: Math.max(1, Math.ceil(ttlSeconds)),
       });
@@ -140,7 +152,7 @@ export class RedisClientService implements OnModuleDestroy {
   /** Releases a key, for a job that failed permanently and should not be retried. */
   async release(key: string): Promise<boolean> {
     const released = await this.run(async (client) => {
-      const removed = await client.del(key);
+      const removed = await client.del(this.key(key));
 
       return removed > 0;
     });
@@ -155,8 +167,8 @@ export class RedisClientService implements OnModuleDestroy {
     maxLength = 500,
   ): Promise<boolean> {
     const pushed = await this.run(async (client) => {
-      await client.lPush(key, value);
-      await client.lTrim(key, 0, Math.max(0, maxLength - 1));
+      await client.lPush(this.key(key), value);
+      await client.lTrim(this.key(key), 0, Math.max(0, maxLength - 1));
 
       return true;
     });
@@ -165,7 +177,7 @@ export class RedisClientService implements OnModuleDestroy {
   }
 
   async listLength(key: string): Promise<number> {
-    const length = await this.run(async (client) => client.lLen(key));
+    const length = await this.run((client) => client.lLen(this.key(key)));
 
     return length ?? 0;
   }
