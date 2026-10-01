@@ -14,16 +14,19 @@ import {
   LoginDto,
   LogoutDto,
   RefreshTokenDto,
+  ResendVerificationDto,
   RegisterDto,
   ResetPasswordDto,
   TwoFactorCodeDto,
   TwoFactorEnabledResponseDto,
   TwoFactorLoginDto,
   UserDeviceDto,
+  VerifyEmailDto,
 } from './dto/index.js';
 import { RefreshTokenRevokedReason } from './enums/index.js';
 import { RefreshTokenService } from './refresh-token.service.js';
 import { DeviceService } from './device.service.js';
+import { EmailVerificationService } from './email-verification.service.js';
 import { PasswordResetService } from './password-reset.service.js';
 import { TwoFactorService } from './two-factor.service.js';
 import {
@@ -51,6 +54,7 @@ export class AuthService {
     private readonly deviceService: DeviceService,
     private readonly twoFactorService: TwoFactorService,
     private readonly passwordResetService: PasswordResetService,
+    private readonly emailVerificationService: EmailVerificationService,
     private readonly mailService: MailService,
     private readonly configService: ConfigService,
   ) {}
@@ -73,6 +77,11 @@ export class AuthService {
     });
 
     const { token } = await this.issueSession(user.id, metadata);
+
+    // The account is usable before the address is confirmed; Phase 19 adds the
+    // gate. Issuing the link here means a user who never checks the address
+    // cannot be reached later without asking for a new one.
+    void this.sendVerification(user).catch(() => undefined);
 
     return this.createAuthToken(user, token);
   }
@@ -110,6 +119,102 @@ export class AuthService {
     const { token } = await this.issueSession(user.id, metadata);
 
     return this.createAuthToken(userResponse, token);
+  }
+
+  /**
+   * Confirms an address from a link.
+   *
+   * Public, because the user clicking the link is not signed in yet, and that is
+   * the whole point of verifying an address. The token is the credential.
+   */
+  async verifyEmail(
+    verifyEmailDto: VerifyEmailDto,
+  ): Promise<GenericMessageDto> {
+    await this.emailVerificationService.verify(verifyEmailDto.token);
+
+    const generic = new GenericMessageDto();
+    generic.message = 'Your email address is confirmed.';
+
+    return generic;
+  }
+
+  /**
+   * Sends another verification link.
+   *
+   * Same message for every outcome, including an already verified address: a
+   * different answer for a verified one would tell an attacker the address is
+   * registered, which is the enumeration this route exists to avoid.
+   */
+  async resendVerification(
+    resendVerificationDto: ResendVerificationDto,
+    ipAddress: string,
+  ): Promise<GenericMessageDto> {
+    const generic = new GenericMessageDto();
+    generic.message =
+      'If that address needs confirming, a new link is on its way.';
+
+    const user = await this.usersService.findByEmail(
+      resendVerificationDto.email,
+    );
+
+    if (!user || !user.isActive || user.isEmailVerified) {
+      return generic;
+    }
+
+    const { token, expiresAt } = await this.emailVerificationService.issue(
+      user,
+      user.email,
+      ipAddress,
+    );
+
+    const hours = Math.round((expiresAt.getTime() - Date.now()) / 3_600_000);
+
+    void this.mailService
+      .sendTemplate(user.email, 'verify-email', {
+        verificationUrl: this.mailService.buildUrl(
+          `/auth/verify-email?token=${encodeURIComponent(token)}`,
+        ),
+        expiresInHours: hours,
+        appName: this.appConfig.name,
+      })
+      .catch(() => undefined);
+
+    return generic;
+  }
+
+  /**
+   * Sends the verification link for a freshly registered user.
+   *
+   * Called from `register()`, so it shares the fire-and-forget rule: a provider
+   * outage must not turn a registration into a 500, and the user can request
+   * another link.
+   */
+  private async sendVerification(user: {
+    id: string;
+    email: string;
+    isEmailVerified: boolean;
+  }): Promise<void> {
+    if (user.isEmailVerified) {
+      return;
+    }
+
+    const { token, expiresAt } = await this.emailVerificationService.issue(
+      user as never,
+      user.email,
+      null,
+    );
+
+    const hours = Math.round((expiresAt.getTime() - Date.now()) / 3_600_000);
+
+    void this.mailService
+      .sendTemplate(user.email, 'verify-email', {
+        verificationUrl: this.mailService.buildUrl(
+          `/auth/verify-email?token=${encodeURIComponent(token)}`,
+        ),
+        expiresInHours: hours,
+        appName: this.appConfig.name,
+      })
+      .catch(() => undefined);
   }
 
   /**

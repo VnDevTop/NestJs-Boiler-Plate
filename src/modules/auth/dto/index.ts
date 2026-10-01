@@ -12,3 +12,5 @@ export * from './two-factor-enabled-response.dto.js';
 export * from './two-factor-login.dto.js';
 export * from './two-factor-setup-response.dto.js';
 export * from './user-device.dto.js';
+export * from './resend-verification.dto.js';
+export * from './verify-email.dto.js';

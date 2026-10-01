@@ -17,17 +17,15 @@ function harness(options: { userExists: boolean; userActive?: boolean }) {
   const sent: { to: string; resetUrl: string; ip: string }[] = [];
 
   const usersService = {
-    findByEmail: vi
-      .fn()
-      .mockResolvedValue(
-        options.userExists
-          ? {
-              id: 'user-1',
-              email: 'a@x.com',
-              isActive: options.userActive ?? true,
-            }
-          : null,
-      ),
+    findByEmail: vi.fn().mockResolvedValue(
+      options.userExists
+        ? {
+            id: 'user-1',
+            email: 'a@x.com',
+            isActive: options.userActive ?? true,
+          }
+        : null,
+    ),
   };
 
   const passwordResetService = {
@@ -51,6 +49,14 @@ function harness(options: { userExists: boolean; userActive?: boolean }) {
     buildUrl: vi.fn((path: string) => `https://app.example.com${path}`),
   };
 
+  const emailVerificationService = {
+    issue: vi.fn().mockResolvedValue({
+      token: 'verify-token',
+      expiresAt: new Date(Date.now() + 24 * 3_600_000),
+    }),
+    verify: vi.fn().mockResolvedValue({ id: 'user-1' }),
+  };
+
   const service = new AuthService(
     {} as never,
     usersService as never,
@@ -58,11 +64,19 @@ function harness(options: { userExists: boolean; userActive?: boolean }) {
     {} as never,
     {} as never,
     passwordResetService as never,
+    emailVerificationService as never,
     mailService as never,
     { getOrThrow: () => appConfig } as unknown as ConfigService,
   );
 
-  return { service, usersService, passwordResetService, mailService, sent };
+  return {
+    service,
+    usersService,
+    passwordResetService,
+    emailVerificationService,
+    mailService,
+    sent,
+  };
 }
 
 describe('AuthService.forgotPassword', () => {

@@ -46,6 +46,7 @@ import {
   LogoutDto,
   RefreshTokenDto,
   RegisterDto,
+  ResendVerificationDto,
   ResetPasswordDto,
   TwoFactorChallengeResponseDto,
   TwoFactorCodeDto,
@@ -53,6 +54,7 @@ import {
   TwoFactorLoginDto,
   TwoFactorSetupResponseDto,
   UserDeviceDto,
+  VerifyEmailDto,
 } from './dto/index.js';
 import { AuthService, LoginResult } from './auth.service.js';
 import { AuthToken, DeviceMetadata } from './types/index.js';
@@ -245,6 +247,53 @@ export class AuthController {
     @Body() resetPasswordDto: ResetPasswordDto,
   ): Promise<GenericMessageDto> {
     return this.authService.resetPassword(resetPasswordDto);
+  }
+
+  /**
+   * Public on purpose: the person clicking the link is not signed in yet, which
+   * is exactly when an address needs confirming. The token is the credential.
+   */
+  @Throttle({ default: { limit: 10, ttl: 3600000 } })
+  @Public()
+  @Post('verify-email')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: 'Confirm an email address with a token',
+    description:
+      'Single use. The account is usable before the address is confirmed.',
+  })
+  @ApiAcceptedResponse({ type: GenericMessageDto })
+  @ApiBadRequestResponse({
+    description: 'The token is unknown, already used or expired',
+  })
+  verifyEmail(
+    @Body() verifyEmailDto: VerifyEmailDto,
+  ): Promise<GenericMessageDto> {
+    return this.authService.verifyEmail(verifyEmailDto);
+  }
+
+  @Throttle({ default: { limit: 3, ttl: 3600000 } })
+  @Public()
+  @Post('resend-verification')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: 'Send another confirmation link',
+    description:
+      'Always 202 with the same message, whether the address is unknown, ' +
+      'unverified or already confirmed.',
+  })
+  @ApiAcceptedResponse({ type: GenericMessageDto })
+  @ApiTooManyRequestsResponse({
+    description: 'Too many requests from this address',
+  })
+  resendVerification(
+    @Body() resendVerificationDto: ResendVerificationDto,
+    @Ip() ipAddress: string,
+  ): Promise<GenericMessageDto> {
+    return this.authService.resendVerification(
+      resendVerificationDto,
+      ipAddress,
+    );
   }
 
   @Post('refresh-token')

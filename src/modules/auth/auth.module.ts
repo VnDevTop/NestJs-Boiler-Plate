@@ -12,6 +12,7 @@ import {
   TwoFactorSecret,
   UserDevice,
 } from './entities/index.js';
+import { EmailVerificationService } from './email-verification.service.js';
 import { PasswordResetService } from './password-reset.service.js';
 import { RefreshTokenService } from './refresh-token.service.js';
 import { DeviceService } from './device.service.js';
@@ -40,6 +41,7 @@ import { MailModule } from '../mail/index.js';
     AuthService,
     RefreshTokenService,
     PasswordResetService,
+    EmailVerificationService,
     DeviceService,
     TwoFactorService,
     JwtStrategy,

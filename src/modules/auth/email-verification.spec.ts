@@ -1,0 +1,281 @@
+import { describe, expect, it, vi } from 'vitest';
+
+import { AuthService } from './auth.service.js';
+
+const appConfig = {
+  name: 'Example',
+  env: 'test',
+  url: 'https://app.example.com',
+};
+
+function harness(
+  options: { userExists?: boolean; verified?: boolean; active?: boolean } = {},
+) {
+  const sent: { to: string; verificationUrl: string }[] = [];
+
+  const usersService = {
+    findByEmail: vi.fn().mockResolvedValue(
+      options.userExists === false
+        ? null
+        : {
+            id: 'user-1',
+            email: 'a@x.com',
+            isActive: options.active ?? true,
+            isEmailVerified: options.verified ?? false,
+          },
+    ),
+    // register() signs a real access token, so the entity needs the fields the
+    // response dto reads rather than a bare id.
+    create: vi.fn().mockResolvedValue({
+      id: 'user-1',
+      email: 'a@x.com',
+      firstName: 'T',
+      lastName: null,
+      role: 'user',
+      isActive: true,
+      isManager: false,
+      isEmailVerified: false,
+      lastLoginAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      deletedAt: null,
+    }),
+  };
+
+  const passwordResetService = {
+    issue: vi.fn().mockResolvedValue({ token: 't', expiresAt: new Date() }),
+    consume: vi.fn(),
+  };
+
+  const emailVerificationService = {
+    issue: vi.fn().mockResolvedValue({
+      token: 'verify-token',
+      expiresAt: new Date(Date.now() + 24 * 3_600_000),
+    }),
+    verify: vi.fn().mockResolvedValue({ id: 'user-1' }),
+  };
+
+  const mailService = {
+    sendTemplate: vi.fn().mockImplementation((_to, name, data) => {
+      if (name === 'verify-email') {
+        sent.push({ to: _to, verificationUrl: data.verificationUrl });
+      }
+      return Promise.resolve({
+        mailId: 'm-1',
+        delivered: true,
+        accepted: [],
+        rejected: [],
+      });
+    }),
+    buildUrl: vi.fn((path: string) => `https://app.example.com${path}`),
+  };
+
+  const deviceService = {
+    register: vi.fn().mockResolvedValue({ id: 'device-1' }),
+  };
+
+  const jwtService = {
+    signAsync: vi.fn().mockResolvedValue('access.token.value'),
+    // createAuthToken reads exp - iat back out of the token it just signed.
+    decode: vi.fn().mockReturnValue({ iat: 1_000, exp: 1_900 }),
+  };
+
+  const service = new AuthService(
+    jwtService as never,
+    usersService as never,
+    { issue: vi.fn().mockResolvedValue({ token: 'r' }) } as never,
+    deviceService as never,
+    {} as never,
+    passwordResetService as never,
+    emailVerificationService as never,
+    mailService as never,
+    {
+      getOrThrow: () => appConfig,
+    } as unknown as import('@nestjs/config').ConfigService,
+  );
+
+  return {
+    service,
+    deviceService,
+    usersService,
+    emailVerificationService,
+    mailService,
+    sent,
+  };
+}
+
+describe('AuthService.verifyEmail', () => {
+  it('confirms the address', async () => {
+    const { service, emailVerificationService } = harness();
+
+    await service.verifyEmail({ token: 't' });
+
+    expect(emailVerificationService.verify).toHaveBeenCalledWith('t');
+  });
+
+  it('reports success', async () => {
+    const { service } = harness();
+
+    await expect(service.verifyEmail({ token: 't' })).resolves.toEqual({
+      message: 'Your email address is confirmed.',
+    });
+  });
+
+  it('lets a bad token surface, since the caller supplied a token', async () => {
+    const { service, emailVerificationService } = harness();
+    emailVerificationService.verify.mockRejectedValue(new Error('expired'));
+
+    await expect(service.verifyEmail({ token: 'bad' })).rejects.toThrow(
+      'expired',
+    );
+  });
+});
+
+describe('AuthService.resendVerification', () => {
+  it('answers with a message that does not confirm anything', async () => {
+    const { service } = harness();
+
+    await expect(
+      service.resendVerification({ email: 'a@x.com' }, '203.0.113.7'),
+    ).resolves.toEqual({
+      message: 'If that address needs confirming, a new link is on its way.',
+    });
+  });
+
+  it('gives an already verified address the identical answer', async () => {
+    // A different message for a verified address would still enumerate who has
+    // an account, which is the whole reason this route is generic.
+    const unverified = harness();
+    const verified = harness({ verified: true });
+
+    const a = await unverified.service.resendVerification(
+      { email: 'a@x.com' },
+      '1.1.1.1',
+    );
+    const b = await verified.service.resendVerification(
+      { email: 'a@x.com' },
+      '1.1.1.1',
+    );
+
+    expect(a).toEqual(b);
+  });
+
+  it('gives an unknown address the identical answer', async () => {
+    const unknown = harness({ userExists: false });
+
+    await expect(
+      unknown.service.resendVerification({ email: 'a@x.com' }, '1.1.1.1'),
+    ).resolves.toEqual({
+      message: 'If that address needs confirming, a new link is on its way.',
+    });
+  });
+
+  it('mints a token for an unverified account', async () => {
+    const { service, emailVerificationService } = harness();
+
+    await service.resendVerification({ email: 'a@x.com' }, '203.0.113.7');
+
+    expect(emailVerificationService.issue).toHaveBeenCalled();
+  });
+
+  it('mints nothing for an already verified account', async () => {
+    const { service, emailVerificationService, mailService } = harness({
+      verified: true,
+    });
+
+    await service.resendVerification({ email: 'a@x.com' }, '203.0.113.7');
+
+    expect(emailVerificationService.issue).not.toHaveBeenCalled();
+    expect(mailService.sendTemplate).not.toHaveBeenCalled();
+  });
+
+  it('mints nothing for a deactivated account', async () => {
+    const { service, mailService } = harness({ active: false });
+
+    await service.resendVerification({ email: 'a@x.com' }, '203.0.113.7');
+
+    expect(mailService.sendTemplate).not.toHaveBeenCalled();
+  });
+
+  it('builds a link carrying the token', async () => {
+    const { service, sent } = harness();
+
+    await service.resendVerification({ email: 'a@x.com' }, '203.0.113.7');
+
+    expect(sent[0].verificationUrl).toContain('/auth/verify-email?token=');
+  });
+
+  it('url-encodes the token', async () => {
+    const { service, emailVerificationService, sent } = harness();
+    emailVerificationService.issue.mockResolvedValue({
+      token: 'a+b/c=',
+      expiresAt: new Date(Date.now() + 3_600_000),
+    });
+
+    await service.resendVerification({ email: 'a@x.com' }, '203.0.113.7');
+
+    expect(sent[0].verificationUrl).toContain(encodeURIComponent('a+b/c='));
+  });
+
+  it('does not wait for the provider', async () => {
+    const { service, mailService } = harness();
+    mailService.sendTemplate.mockReturnValue(new Promise(() => {}));
+
+    await expect(
+      service.resendVerification({ email: 'a@x.com' }, '203.0.113.7'),
+    ).resolves.toBeDefined();
+  });
+
+  it('survives a provider rejection', async () => {
+    const { service, mailService } = harness();
+    mailService.sendTemplate.mockRejectedValue(new Error('smtp down'));
+
+    await expect(
+      service.resendVerification({ email: 'a@x.com' }, '203.0.113.7'),
+    ).resolves.toBeDefined();
+  });
+});
+
+describe('AuthService.register verification link', () => {
+  it('does not add latency to registration', async () => {
+    // The account is created and the session issued; the link is fire and
+    // forget, so a provider that hangs cannot hold the request open.
+    const { service, mailService } = harness();
+    mailService.sendTemplate.mockReturnValue(new Promise(() => {}));
+
+    await expect(
+      service.register(
+        { email: 'a@x.com', password: 'password123' } as never,
+        { ipAddress: '1.1.1.1' } as never,
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  it('sends a verification link for a new account', async () => {
+    const { service, sent } = harness();
+
+    await service.register(
+      { email: 'a@x.com', password: 'password123' } as never,
+      { ipAddress: '1.1.1.1' } as never,
+    );
+
+    // The send is not awaited, so the assertion waits a tick for the promise
+    // chain to settle rather than relying on registration awaiting it.
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(
+      sent.some((m) => m.verificationUrl.includes('/auth/verify-email')),
+    ).toBe(true);
+  });
+
+  it('still registers when the provider is down', async () => {
+    const { service, mailService } = harness();
+    mailService.sendTemplate.mockRejectedValue(new Error('smtp down'));
+
+    await expect(
+      service.register(
+        { email: 'a@x.com', password: 'password123' } as never,
+        { ipAddress: '1.1.1.1' } as never,
+      ),
+    ).resolves.toBeDefined();
+  });
+});
