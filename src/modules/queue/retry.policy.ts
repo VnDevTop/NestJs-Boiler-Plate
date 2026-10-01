@@ -16,6 +16,8 @@ export const DEFAULT_BACKOFF_MAX_DELAY = 60_000;
 export interface BackoffOptions {
   delay?: number;
   maxDelay?: number;
+  /** Total attempts, including the first. The defaults here are the fallbacks. */
+  attempts?: number;
 }
 
 /**
@@ -49,7 +51,7 @@ export function backoffDelay(
 /** The options a queue backend needs for a job of this policy. */
 export function toRetryPolicy(options: BackoffOptions = {}): RetryPolicy {
   return {
-    attempts: DEFAULT_RETRY_ATTEMPTS,
+    attempts: options.attempts ?? DEFAULT_RETRY_ATTEMPTS,
     backoff: {
       type: 'exponential',
       delay: options.delay ?? DEFAULT_BACKOFF_DELAY,
@@ -78,7 +80,7 @@ export function isRetryable(result: JobResult): boolean {
  * time the last attempt itself may take.
  */
 export function retryWindowMs(options: BackoffOptions = {}): number {
-  const attempts = DEFAULT_RETRY_ATTEMPTS;
+  const attempts = options.attempts ?? DEFAULT_RETRY_ATTEMPTS;
   const total = Array.from({ length: attempts - 1 }, (_, index) =>
     backoffDelay(index + 1, options),
   ).reduce((sum, value) => sum + value, 0);

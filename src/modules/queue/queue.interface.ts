@@ -72,10 +72,12 @@ export interface RetryPolicy {
 export interface JobQueue {
   /** Human-readable name of the active implementation, for the health check. */
   readonly driver: 'bullmq' | 'in-process';
-  enqueue(queue: QueueName, job: Job): Promise<void>;
   /**
-   * Registers repeating work. Ignored by the in-process driver when the queue is
-   * off, which the caller does not have to care about.
+   * Accepts a job, and resolves once it is accepted rather than once it has run.
+   *
+   * That distinction is the point: a registration must not wait for SMTP, and an
+   * enqueue that resolved on completion would put the provider's latency back into
+   * the request.
    */
-  schedule(queue: QueueName, name: string, cron: string): Promise<void>;
+  enqueue(queue: QueueName, job: Job): Promise<void>;
 }
