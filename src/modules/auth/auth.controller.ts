@@ -10,6 +10,7 @@ import {
   Ip,
   Param,
   Post,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -19,14 +20,19 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiTooManyRequestsResponse,
   ApiTags,
   ApiUnauthorizedResponse,
+  ApiBadRequestResponse,
+  ApiAcceptedResponse,
   getSchemaPath,
 } from '@nestjs/swagger';
 
+import { ThrottleByEmailGuard } from '../../common/guards/index.js';
 import {
   DEVICE_NAME_HEADER,
   DEVICE_NAME_MAX_LENGTH,
+  mailThrottleOptions,
 } from '../../common/constants/index.js';
 import {
   CurrentUser,
@@ -37,16 +43,21 @@ import type { RequestUser } from '../../common/interfaces/index.js';
 import { UserResponseDto } from '../users/dto/index.js';
 import {
   AuthTokenResponseDto,
+  ForgotPasswordDto,
+  GenericMessageDto,
   LoginDto,
   LogoutDto,
   RefreshTokenDto,
   RegisterDto,
+  ResendVerificationDto,
+  ResetPasswordDto,
   TwoFactorChallengeResponseDto,
   TwoFactorCodeDto,
   TwoFactorEnabledResponseDto,
   TwoFactorLoginDto,
   TwoFactorSetupResponseDto,
   UserDeviceDto,
+  VerifyEmailDto,
 } from './dto/index.js';
 import { AuthService, LoginResult } from './auth.service.js';
 import { AuthToken, DeviceMetadata } from './types/index.js';
@@ -190,6 +201,106 @@ export class AuthController {
 
   @Throttle({ default: { limit: 20, ttl: 60000 } })
   @Public()
+  /**
+   * Always 202, never 200 or 404.
+   *
+   * The status is the same for a known and an unknown address on purpose. A
+   * different status for a miss is an account enumeration oracle that needs no
+   * timing analysis to read.
+   */
+  @UseGuards(ThrottleByEmailGuard)
+  @Throttle(mailThrottleOptions())
+  @Public()
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: 'Request a password reset link',
+    description:
+      'Always returns 202 with the same message, whether or not an account ' +
+      'exists for the address. Check the mailbox rather than the response.',
+  })
+  @ApiAcceptedResponse({ type: GenericMessageDto })
+  @ApiTooManyRequestsResponse({
+    description: 'Too many reset requests from this address',
+  })
+  forgotPassword(
+    @Body() forgotPasswordDto: ForgotPasswordDto,
+    @Ip() ipAddress: string,
+  ): Promise<GenericMessageDto> {
+    return this.authService.forgotPassword(forgotPasswordDto, ipAddress);
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 3600000 } })
+  @Public()
+  @Post('reset-password')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: 'Set a new password with a reset token',
+    description:
+      'The token is single use. On success every other session is signed out, ' +
+      'including this device.',
+  })
+  @ApiAcceptedResponse({ type: GenericMessageDto })
+  @ApiBadRequestResponse({
+    description: 'The token is unknown, already used or expired',
+  })
+  @ApiTooManyRequestsResponse({
+    description: 'Too many attempts',
+  })
+  resetPassword(
+    @Body() resetPasswordDto: ResetPasswordDto,
+  ): Promise<GenericMessageDto> {
+    return this.authService.resetPassword(resetPasswordDto);
+  }
+
+  /**
+   * Public on purpose: the person clicking the link is not signed in yet, which
+   * is exactly when an address needs confirming. The token is the credential.
+   */
+  @Throttle(mailThrottleOptions())
+  @Public()
+  @Post('verify-email')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: 'Confirm an email address with a token',
+    description:
+      'Single use. The account is usable before the address is confirmed.',
+  })
+  @ApiAcceptedResponse({ type: GenericMessageDto })
+  @ApiBadRequestResponse({
+    description: 'The token is unknown, already used or expired',
+  })
+  verifyEmail(
+    @Body() verifyEmailDto: VerifyEmailDto,
+  ): Promise<GenericMessageDto> {
+    return this.authService.verifyEmail(verifyEmailDto);
+  }
+
+  @UseGuards(ThrottleByEmailGuard)
+  @Throttle(mailThrottleOptions())
+  @Public()
+  @Post('resend-verification')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: 'Send another confirmation link',
+    description:
+      'Always 202 with the same message, whether the address is unknown, ' +
+      'unverified or already confirmed.',
+  })
+  @ApiAcceptedResponse({ type: GenericMessageDto })
+  @ApiTooManyRequestsResponse({
+    description: 'Too many requests from this address',
+  })
+  resendVerification(
+    @Body() resendVerificationDto: ResendVerificationDto,
+    @Ip() ipAddress: string,
+  ): Promise<GenericMessageDto> {
+    return this.authService.resendVerification(
+      resendVerificationDto,
+      ipAddress,
+    );
+  }
+
   @Post('refresh-token')
   @ApiOperation({
     summary: 'Exchange a refresh token for a new token pair',

@@ -77,16 +77,38 @@ Optional, and off entirely with `TWO_FACTOR_ENABLED=false`.
 `@Throttle` tightens the global limit on the routes that accept a secret, because
 100 per minute is no defence at all against password guessing.
 
-| Route | Limit |
-| --- | --- |
-| `POST /auth/login` | 5 / min |
-| `POST /auth/2fa/login` | 5 / 5 min |
-| `POST /auth/2fa/verify` | 5 / 5 min |
-| `POST /auth/register` | 10 / 5 min |
-| `POST /auth/refresh-token` | 20 / min |
+| Route                            | Limit                                      |
+| -------------------------------- | ------------------------------------------ |
+| `POST /auth/login`               | 5 / min                                    |
+| `POST /auth/2fa/login`           | 5 / 5 min                                  |
+| `POST /auth/2fa/verify`          | 5 / 5 min                                  |
+| `POST /auth/register`            | 10 / 5 min                                 |
+| `POST /auth/refresh-token`       | 20 / min                                   |
+| `POST /auth/forgot-password`     | 3 / hour per address, 10 / hour per client |
+| `POST /auth/resend-verification` | 3 / hour per address, 10 / hour per client |
+| `POST /auth/verify-email`        | 10 / hour                                  |
 
 Counters are per process, so with several replicas the effective limit is the
 number above **times the replica count**.
+
+## Account enumeration
+
+`forgot-password` and `resend-verification` answer the same way, take the same
+time, and do the same database work whether or not the address is registered.
+
+| Defence                                                                             | Why                                                                             |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| One message for every outcome, including an already verified or deactivated account | A different message is an oracle that needs no analysis to read                 |
+| The miss path runs the same `UPDATE` against an id with no rows                     | Fewer statements means a faster response, and speed is a signal                 |
+| Both paths are held for `TIMING_FLOOR_MS`, with the same jitter on both             | Jittering only the fast path would separate the branches in the other direction |
+| No mail is sent on the miss path                                                    | A caller cannot check the promise except by the absence of mail                 |
+
+**The floor is a mitigation, not a proof.** It only holds while the real branch
+stays under it. If issuing a token ever takes longer than `TIMING_FLOOR_MS`, that
+branch becomes the slow one and the padding equalises nothing.
+`enumeration.spec.ts` asserts both branches are held for the floor, which is the
+assertion that actually pins it: the difference assertion alone passes even with
+the padding removed, because the gap it measures is small.
 
 ## Auth state is not cached
 

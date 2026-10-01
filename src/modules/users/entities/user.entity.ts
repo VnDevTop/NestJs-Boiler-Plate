@@ -41,6 +41,19 @@ export class User {
   @Column({ type: 'boolean', default: false })
   isManager!: boolean;
 
+  /**
+   * Whether the address in `email` has been confirmed.
+   *
+   * A row of its own rather than "is there a live verification token", because
+   * the token is deleted on confirmation and on retention while this is the
+   * lasting answer. Phase 19 uses it to gate sensitive actions.
+   */
+  @Column({ type: 'boolean', default: false })
+  isEmailVerified!: boolean;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  emailVerifiedAt!: Date | null;
+
   @Column({ type: 'timestamptz', nullable: true })
   lastLoginAt!: Date | null;
 

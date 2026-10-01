@@ -1,3 +1,6 @@
+export * from './reset-password.dto.js';
+export * from './generic-message.dto.js';
+export * from './forgot-password.dto.js';
 export * from './auth-token-response.dto.js';
 export * from './login.dto.js';
 export * from './logout.dto.js';
@@ -9,3 +12,5 @@ export * from './two-factor-enabled-response.dto.js';
 export * from './two-factor-login.dto.js';
 export * from './two-factor-setup-response.dto.js';
 export * from './user-device.dto.js';
+export * from './resend-verification.dto.js';
+export * from './verify-email.dto.js';

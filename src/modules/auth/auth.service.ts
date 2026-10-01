@@ -1,23 +1,39 @@
+import { randomUUID } from 'node:crypto';
+
 import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 
 import { JwtPayload, RequestUser } from '../../common/interfaces/index.js';
-import { hashPassword, verifyPassword } from '../../common/utils/index.js';
+import {
+  hashPassword,
+  padResponse,
+  verifyPassword,
+} from '../../common/utils/index.js';
+import type { AppConfig } from '../../configs/app.config.js';
+import { MailService } from '../mail/index.js';
 import { UserResponseDto } from '../users/dto/index.js';
 import { UsersService } from '../users/index.js';
 import {
+  ForgotPasswordDto,
+  GenericMessageDto,
   LoginDto,
   LogoutDto,
   RefreshTokenDto,
+  ResendVerificationDto,
   RegisterDto,
+  ResetPasswordDto,
   TwoFactorCodeDto,
   TwoFactorEnabledResponseDto,
   TwoFactorLoginDto,
   UserDeviceDto,
+  VerifyEmailDto,
 } from './dto/index.js';
 import { RefreshTokenRevokedReason } from './enums/index.js';
 import { RefreshTokenService } from './refresh-token.service.js';
 import { DeviceService } from './device.service.js';
+import { EmailVerificationService } from './email-verification.service.js';
+import { PasswordResetService } from './password-reset.service.js';
 import { TwoFactorService } from './two-factor.service.js';
 import {
   AuthToken,
@@ -43,7 +59,15 @@ export class AuthService {
     private readonly refreshTokenService: RefreshTokenService,
     private readonly deviceService: DeviceService,
     private readonly twoFactorService: TwoFactorService,
+    private readonly passwordResetService: PasswordResetService,
+    private readonly emailVerificationService: EmailVerificationService,
+    private readonly mailService: MailService,
+    private readonly configService: ConfigService,
   ) {}
+
+  private get appConfig(): AppConfig {
+    return this.configService.getOrThrow<AppConfig>('app');
+  }
 
   async register(
     registerDto: RegisterDto,
@@ -59,6 +83,11 @@ export class AuthService {
     });
 
     const { token } = await this.issueSession(user.id, metadata);
+
+    // The account is usable before the address is confirmed; Phase 19 adds the
+    // gate. Issuing the link here means a user who never checks the address
+    // cannot be reached later without asking for a new one.
+    void this.sendVerification(user).catch(() => undefined);
 
     return this.createAuthToken(user, token);
   }
@@ -96,6 +125,191 @@ export class AuthService {
     const { token } = await this.issueSession(user.id, metadata);
 
     return this.createAuthToken(userResponse, token);
+  }
+
+  /**
+   * Confirms an address from a link.
+   *
+   * Public, because the user clicking the link is not signed in yet, and that is
+   * the whole point of verifying an address. The token is the credential.
+   */
+  async verifyEmail(
+    verifyEmailDto: VerifyEmailDto,
+  ): Promise<GenericMessageDto> {
+    await this.emailVerificationService.verify(verifyEmailDto.token);
+
+    const generic = new GenericMessageDto();
+    generic.message = 'Your email address is confirmed.';
+
+    return generic;
+  }
+
+  /**
+   * Sends another verification link.
+   *
+   * Same message for every outcome, including an already verified address: a
+   * different answer for a verified one would tell an attacker the address is
+   * registered, which is the enumeration this route exists to avoid.
+   */
+  async resendVerification(
+    resendVerificationDto: ResendVerificationDto,
+    ipAddress: string,
+  ): Promise<GenericMessageDto> {
+    const startedAt = Date.now();
+    const generic = new GenericMessageDto();
+    generic.message =
+      'If that address needs confirming, a new link is on its way.';
+
+    const user = await this.usersService.findByEmail(
+      resendVerificationDto.email,
+    );
+
+    if (!user || !user.isActive || user.isEmailVerified) {
+      // Same statement as the real branch, against an id with no rows, so the
+      // three outcomes cost the same and not merely answer the same.
+      await this.emailVerificationService.spendOutstandingFor(randomUUID());
+
+      return this.padded(generic, startedAt);
+    }
+
+    const { token, expiresAt } = await this.emailVerificationService.issue(
+      user,
+      user.email,
+      ipAddress,
+    );
+
+    const hours = Math.round((expiresAt.getTime() - Date.now()) / 3_600_000);
+
+    void this.mailService
+      .sendTemplate(user.email, 'verify-email', {
+        verificationUrl: this.mailService.buildUrl(
+          `/auth/verify-email?token=${encodeURIComponent(token)}`,
+        ),
+        expiresInHours: hours,
+        appName: this.appConfig.name,
+      })
+      .catch(() => undefined);
+
+    return this.padded(generic, startedAt);
+  }
+
+  /**
+   * Sends the verification link for a freshly registered user.
+   *
+   * Called from `register()`, so it shares the fire-and-forget rule: a provider
+   * outage must not turn a registration into a 500, and the user can request
+   * another link.
+   */
+  private async sendVerification(user: {
+    id: string;
+    email: string;
+    isEmailVerified: boolean;
+  }): Promise<void> {
+    if (user.isEmailVerified) {
+      return;
+    }
+
+    const { token, expiresAt } = await this.emailVerificationService.issue(
+      user as never,
+      user.email,
+      null,
+    );
+
+    const hours = Math.round((expiresAt.getTime() - Date.now()) / 3_600_000);
+
+    void this.mailService
+      .sendTemplate(user.email, 'verify-email', {
+        verificationUrl: this.mailService.buildUrl(
+          `/auth/verify-email?token=${encodeURIComponent(token)}`,
+        ),
+        expiresInHours: hours,
+        appName: this.appConfig.name,
+      })
+      .catch(() => undefined);
+  }
+
+  /**
+   * Starts a password reset.
+   *
+   * The answer is identical whether or not the address exists, and so is the
+   * work done before the branch: one email lookup and one hash, in both cases.
+   * That is the part a "did they find the account" timing attack looks for, and
+   * it is why the lookup result is not returned to the caller.
+   */
+  async forgotPassword(
+    forgotPasswordDto: ForgotPasswordDto,
+    ipAddress: string,
+  ): Promise<GenericMessageDto> {
+    const startedAt = Date.now();
+    const generic = new GenericMessageDto();
+    generic.message =
+      'If an account exists for that address, a reset link is on its way.';
+
+    const user = await this.usersService.findByEmail(forgotPasswordDto.email);
+
+    if (!user || !user.isActive) {
+      // The same statement the real branch runs, against an id with no rows, so
+      // both branches pay for the same query. Without it the miss is measurably
+      // cheaper and the response time alone answers the question.
+      await this.passwordResetService.spendOutstandingFor(randomUUID());
+
+      return this.padded(generic, startedAt);
+    }
+
+    const { token, expiresAt } = await this.passwordResetService.issue(
+      user,
+      ipAddress,
+    );
+
+    const minutes = Math.round((expiresAt.getTime() - Date.now()) / 60_000);
+
+    // Not awaited: a provider that hangs must not hold the request open, and a
+    // failure here is logged rather than turned into a failed reset. The token
+    // is already stored, so the user can request another.
+    void this.mailService
+      .sendTemplate(user.email, 'reset-password', {
+        resetUrl: this.mailService.buildUrl(
+          `/auth/reset-password?token=${encodeURIComponent(token)}`,
+        ),
+        ip: ipAddress,
+        expiresInMinutes: minutes,
+        appName: this.appConfig.name,
+      })
+      .catch(() => undefined);
+
+    return this.padded(generic, startedAt);
+  }
+
+  /**
+   * Holds an account-existence response for a fixed minimum.
+   *
+   * The message being identical is not sufficient on its own: the branch that
+   * issues a token does more work, and an attacker sorting a batch of guesses by
+   * response time finds the registered addresses without any clever analysis.
+   * Both outcomes wait for the same floor, with the same jitter applied to both.
+   */
+  protected async padded<T>(response: T, startedAt: number): Promise<T> {
+    await padResponse({ startedAt });
+
+    return response;
+  }
+
+  /**
+   * Finishes a password reset: changes the password, spends the token and kills
+   * every other session, in one transaction.
+   */
+  async resetPassword(
+    resetPasswordDto: ResetPasswordDto,
+  ): Promise<GenericMessageDto> {
+    await this.passwordResetService.consume(
+      resetPasswordDto.token,
+      resetPasswordDto.newPassword,
+    );
+
+    const generic = new GenericMessageDto();
+    generic.message = 'Your password has been changed. Sign in again.';
+
+    return generic;
   }
 
   /**

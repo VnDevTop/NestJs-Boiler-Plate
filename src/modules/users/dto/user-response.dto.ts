@@ -42,6 +42,14 @@ export class UserResponseDto {
   })
   isManager!: boolean;
 
+  @ApiProperty({
+    example: false,
+    description:
+      'Whether the address is confirmed. The account works either way; Phase ' +
+      '19 uses this to gate sensitive actions.',
+  })
+  isEmailVerified!: boolean;
+
   @ApiPropertyOptional({
     example: '2026-09-26T00:00:00.000Z',
     nullable: true,
@@ -72,6 +80,7 @@ export class UserResponseDto {
     this.role = user.role;
     this.isActive = user.isActive;
     this.isManager = user.isManager;
+    this.isEmailVerified = user.isEmailVerified;
     this.lastLoginAt = user.lastLoginAt;
     this.createdAt = user.createdAt;
     this.updatedAt = user.updatedAt;

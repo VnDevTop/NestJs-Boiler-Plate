@@ -140,36 +140,42 @@ feat: add mail, notification, queue and retention configuration
 
 ## Phase 14: Outbound Email
 
-Status: Pending
+Status: Done
 
 Goal:
 
 Deliver transactional email through a swappable transport, with templates
 written as plain functions so no template engine dependency is introduced.
 
+Note: templates are deliberately plain functions in this phase, and the ones
+shipped in the repository are the only ones that can send. A template engine and
+database-managed templates are a separate phase, Phase 22, because they are a
+runtime dependency and an admin surface, and neither belongs in the phase whose
+job is to make a user receive a welcome email.
+
 Tasks:
 
-- [ ] Create `src/modules/mail` with `mail.module.ts`, `mail.service.ts`
-- [ ] Define `MailTransport { send(message): Promise<SendResult> }` in
+- [x] Create `src/modules/mail` with `mail.module.ts`, `mail.service.ts`
+- [x] Define `MailTransport { send(message): Promise<SendResult> }` in
       `transports/transport.interface.ts`
-- [ ] Implement `memory.transport.ts` as the zero-dependency dev default
-- [ ] Implement `smtp.transport.ts` over the optional `nodemailer`
-- [ ] Implement `ses.transport.ts` and `sendgrid.transport.ts` over their
+- [x] Implement `memory.transport.ts` as the zero-dependency dev default
+- [x] Implement `smtp.transport.ts` over the optional `nodemailer`
+- [x] Implement `ses.transport.ts` and `sendgrid.transport.ts` over their
       optional packages
-- [ ] Make `memory` the development default and refuse it in production
-- [ ] Build `templates/template.registry.ts` mapping a name to
+- [x] Make `memory` the development default and refuse it in production
+- [x] Build `templates/template.registry.ts` mapping a name to
       `{ subject, render(data) }`
-- [ ] Render both an HTML and a plain-text part for every template
-- [ ] Give each template exactly the data it needs, never the user entity
-- [ ] Generate a stable mail id per message, log it, and return it to the caller
-- [ ] Add `POST /auth/forgot-password`, returning 202 with a generic message
-- [ ] Add `POST /auth/reset-password`, single-use token, invalidates other
+- [x] Render both an HTML and a plain-text part for every template
+- [x] Give each template exactly the data it needs, never the user entity
+- [x] Generate a stable mail id per message, log it, and return it to the caller
+- [x] Add `POST /auth/forgot-password`, returning 202 with a generic message
+- [x] Add `POST /auth/reset-password`, single-use token, invalidates other
       sessions on success
-- [ ] Add `POST /auth/verify-email` and `POST /auth/resend-verification`
-- [ ] Add the `email_verification_tokens` and `password_reset_tokens` entities
-- [ ] Store tokens hashed with sha256, never in plaintext
-- [ ] Index `expiresAt` on every token table, Phase 16 cleans on it
-- [ ] Add a throttler bucket for mail: 3 reset mails per hour per email and
+- [x] Add `POST /auth/verify-email` and `POST /auth/resend-verification`
+- [x] Add the `email_verification_tokens` and `password_reset_tokens` entities
+- [x] Store tokens hashed with sha256, never in plaintext
+- [x] Index `expiresAt` on every token table, Phase 16 cleans on it
+- [x] Add a throttler bucket for mail: 3 reset mails per hour per email and
       10 per hour per IP
 
 Template set:
@@ -182,6 +188,28 @@ password-changed   after reset, forced      ip, deviceLabel
 new-device-login   refresh from new device   deviceLabel, ip, time
 account-locked     lockout or admin action   reason, supportUrl
 ```
+
+All six exist and are tested. Four are emitted: `verify-email` and
+`reset-password` from this phase, `welcome` from the same register call. Three
+are rendered but have no caller yet, because the events that need them do not
+exist: `password-changed` waits for the forced-change flow, `new-device-login`
+for the refresh event, `account-locked` for the lockout, which Phase 19 adds.
+
+Security notes, and where each one landed:
+
+- `forgot-password` answers identically whether or not the email exists. It also
+  takes the same time and does the same database work: the miss path runs the
+  same statement against an id with no rows, and both paths are held for a fixed
+  floor with equal jitter. A matching message alone is not enough, because the
+  branch that issues a token is measurably slower. See
+  `src/modules/auth/README.md` for why the floor is a mitigation rather than a
+  proof.
+- The reset token is consumed inside the same transaction that changes the
+  password, so a crash can never leave a live token with a changed password. The
+  session revocation is in that transaction too.
+- `MailService.send()` does not add latency to `register()` or `login()`. The
+  send is not awaited, so a provider that hangs cannot hold a request open. It
+  still costs two database statements, which Phase 15 removes by queueing.
 
 Security notes that are part of the definition of done:
 
@@ -538,6 +566,63 @@ test: cover optional dependencies, cache invalidation and retention
 
 ---
 
+## Phase 22: Configurable Email Templates
+
+Status: Pending
+
+Goal:
+
+Let an operator change a welcome email or a password reset email without a
+deploy, by storing the template in the database and rendering it with a real
+engine. Phase 14 ships plain functions, which is right for a boilerplate: the
+templates in the repository are code, they are reviewed in a diff, and the app
+has no template dependency at all. This phase trades both for editability.
+
+Tasks:
+
+- [ ] Add `handlebars` as a dependency, and say plainly in the README that the
+      no-dependency property of Phase 14 is what is being given up
+- [ ] Create the `email_templates` entity: name, locale, subject, text, html,
+      version, `updatedBy`, timestamps
+- [ ] Ship the six Phase 14 templates as `.hbs` files, and seed the table from
+      them so a fresh clone has every template present
+- [ ] Make the database row the override and the `.hbs` file the fallback, so an
+      app with an empty table still sends every mail
+- [ ] Render through `CacheService.wrap()` under a new `CACHE_NAMESPACE.Mail`
+      key, so a hot template expiring under load does not stampede the table
+- [ ] Invalidate the cache entry on every template write, so an edit takes
+      effect on the next send rather than after a TTL
+- [ ] Add `GET/PUT /admin/mail-templates/:name` behind a permission, writing an
+      audit entry through the Phase 19 audit log
+- [ ] Reject a stored template containing `{{{`, since raw interpolation of a
+      user-controlled field is stored XSS in the mail client
+- [ ] Keep the per-template data contract: the admin form lists the allowed
+      fields, so an editor cannot add a variable no call site supplies
+- [ ] Preview a stored template against sample data before saving it
+- [ ] Purge template versions older than the Phase 16 retention window
+
+Implementation note: a stored template is untrusted input even though only an
+admin writes it. Handlebars escapes `{{ }}` and not `{{{ }}}`, so a template
+that opts out of escaping turns a first name into script in a mail client. The
+narrow rule is that the `{{{` sequence is rejected in anything read from the
+database, while a `.hbs` file in the repository is trusted because it went
+through review.
+
+Expected outcome:
+
+- An operator edits a transactional email in the running app, with a preview,
+  and the change reaches the next send.
+- A template can still be reviewed in a diff, because the file remains the
+  fallback and the seed.
+
+Expected commit:
+
+```text
+feat: add database-managed email templates
+```
+
+---
+
 ## Follow-up Candidates
 
 Not scheduled. Each needs a decision before it becomes a phase.
@@ -597,7 +682,7 @@ lands after the harness in Phase 12 is solid.
 | Phase 11 | Production Hardening                           | Done    |
 | Phase 12 | Optional Integration Foundation                | Done    |
 | Phase 13 | Configuration Expansion                        | Done    |
-| Phase 14 | Outbound Email                                 | Pending |
+| Phase 14 | Outbound Email                                 | Done    |
 | Phase 15 | Background Job Queue                           | Pending |
 | Phase 16 | Data Retention and Cleanup                     | Pending |
 | Phase 17 | Authentication and Authorization through Cache | Pending |
@@ -605,3 +690,4 @@ lands after the harness in Phase 12 is solid.
 | Phase 19 | Account Security Features                      | Pending |
 | Phase 20 | Operational Hardening                          | Pending |
 | Phase 21 | Testing Depth and Documentation                | Pending |
+| Phase 22 | Configurable Email Templates                   | Pending |
