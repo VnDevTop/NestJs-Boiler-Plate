@@ -25,7 +25,7 @@ modules/auth/entities/refresh-token.entity.ts
 
 ```ts
 // database.config.ts
-synchronize: false   // the default
+synchronize: false; // the default
 ```
 
 Schema changes go through a reviewed migration. With `synchronize` on, deploying
@@ -38,11 +38,45 @@ be able to do.
 npm run migration:generate   # create a migration from entity changes
 npm run migration:run
 npm run migration:revert
+npm run migration:show
+npm run migration:baseline   # record migrations as applied, without running them
 npm run seed
 ```
 
 Each builds first and then runs the TypeORM CLI against `dist`, so there is no
 `ts-node` in the toolchain and the CLI runs the same JavaScript the app does.
+
+## Adopting an existing database
+
+`migration:run` executes each migration's SQL. On a database that was created
+before this project tracked migrations — by hand, by an earlier
+`synchronize: true`, or by a `CREATE TABLE` in a setup script — the first
+migration fails on its first statement, because the table it creates already
+exists. The schema is correct; only the bookkeeping is missing. The symptom is
+`relation "users" already exists`, and it repeats on every run, so no later
+migration can be applied either.
+
+Check what is missing:
+
+```bash
+npm run migration:show
+```
+
+A migration listed as pending that the database already satisfies is what this
+section is about. Confirm the columns, indexes and foreign keys are really there
+(`information_schema` is enough), take a backup, then record it:
+
+```bash
+npm run migration:baseline                  # every pending migration
+npm run migration:baseline -- InitialSchema # only the ones whose name matches
+```
+
+It prints what it would record and writes nothing unless `CONFIRM_BASELINE=yes`
+is also set, and it is safe to re-run: a migration already recorded is skipped.
+
+The `migrations` table is not a status file, so this is the only correct way to
+reconcile it. It cannot undo a schema it did not create, which is why the check
+comes before the command.
 
 ## The standalone data source
 

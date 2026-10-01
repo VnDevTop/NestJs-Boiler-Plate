@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AuthController } from './auth.controller.js';
@@ -18,12 +19,18 @@ import { RefreshTokenService } from './refresh-token.service.js';
 import { DeviceService } from './device.service.js';
 import { TwoFactorService } from './two-factor.service.js';
 import { JwtStrategy } from './strategies/index.js';
-import { jwtAccessTokenConfig } from '../../configs/index.js';
+import { jwtAccessTokenConfig, throttlerConfig } from '../../configs/index.js';
 import { MailModule } from '../mail/index.js';
 
 @Module({
   imports: [
     PassportModule,
+    // ThrottleByEmailGuard needs the throttler options and storage, and
+    // ThrottlerModule is not global. Declaring it here rather than relying on
+    // app.module means AuthModule resolves on its own, so a test that builds it
+    // without the whole application still works. The same config provider is
+    // used, so THROTTLE_TTL and THROTTLE_LIMIT apply here as well.
+    ThrottlerModule.forRootAsync(throttlerConfig.asProvider()),
     // Mail is an export of MailModule, so the template names and the transport
     // live in the mail module rather than in auth.
     MailModule,
