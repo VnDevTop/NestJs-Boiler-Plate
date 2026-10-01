@@ -66,6 +66,7 @@
   "devDependencies": {
     "@commitlint/cli": "^21.2.3",
     "@commitlint/config-conventional": "^21.2.3",
+    "@nestjs/bullmq": "^12.0.0",
     "@nestjs/cli": "^12.0.0",
     "@nestjs/mau": "^0.2.6",
     "@nestjs/platform-fastify": "^12.1.0",
@@ -77,6 +78,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/supertest": "^7.0.0",
     "@vitest/coverage-v8": "^4.1.2",
+    "bullmq": "^6.3.11",
     "fastify": "^5.12.5",
     "husky": "^9.1.7",
     "lint-staged": "^17.6.0",
