@@ -10,6 +10,7 @@ import {
   Ip,
   Param,
   Post,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -27,9 +28,11 @@ import {
   getSchemaPath,
 } from '@nestjs/swagger';
 
+import { ThrottleByEmailGuard } from '../../common/guards/index.js';
 import {
   DEVICE_NAME_HEADER,
   DEVICE_NAME_MAX_LENGTH,
+  mailThrottleOptions,
 } from '../../common/constants/index.js';
 import {
   CurrentUser,
@@ -205,7 +208,8 @@ export class AuthController {
    * different status for a miss is an account enumeration oracle that needs no
    * timing analysis to read.
    */
-  @Throttle({ default: { limit: 3, ttl: 3600000 } })
+  @UseGuards(ThrottleByEmailGuard)
+  @Throttle(mailThrottleOptions())
   @Public()
   @Post('forgot-password')
   @HttpCode(HttpStatus.ACCEPTED)
@@ -253,7 +257,7 @@ export class AuthController {
    * Public on purpose: the person clicking the link is not signed in yet, which
    * is exactly when an address needs confirming. The token is the credential.
    */
-  @Throttle({ default: { limit: 10, ttl: 3600000 } })
+  @Throttle(mailThrottleOptions())
   @Public()
   @Post('verify-email')
   @HttpCode(HttpStatus.ACCEPTED)
@@ -272,7 +276,8 @@ export class AuthController {
     return this.authService.verifyEmail(verifyEmailDto);
   }
 
-  @Throttle({ default: { limit: 3, ttl: 3600000 } })
+  @UseGuards(ThrottleByEmailGuard)
+  @Throttle(mailThrottleOptions())
   @Public()
   @Post('resend-verification')
   @HttpCode(HttpStatus.ACCEPTED)
