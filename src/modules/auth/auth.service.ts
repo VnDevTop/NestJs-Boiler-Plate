@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 
@@ -12,6 +12,13 @@ import {
 } from '../../common/utils/index.js';
 import type { AppConfig } from '../../configs/app.config.js';
 import { MailService } from '../mail/index.js';
+import {
+  dedupeKey,
+  JOB_QUEUE,
+  MAIL_JOB,
+  type MailJobPayload,
+  type JobQueue,
+} from '../queue/index.js';
 import { UserResponseDto } from '../users/dto/index.js';
 import { UsersService } from '../users/index.js';
 import {
@@ -62,6 +69,9 @@ export class AuthService {
     private readonly passwordResetService: PasswordResetService,
     private readonly emailVerificationService: EmailVerificationService,
     private readonly mailService: MailService,
+    // Injected by token: `JobQueue` is an interface, so Nest has no class to
+    // resolve the type from and would fail with an unresolvable dependency.
+    @Inject(JOB_QUEUE) private readonly jobQueue: JobQueue,
     private readonly configService: ConfigService,
   ) {}
 
@@ -180,15 +190,7 @@ export class AuthService {
 
     const hours = Math.round((expiresAt.getTime() - Date.now()) / 3_600_000);
 
-    void this.mailService
-      .sendTemplate(user.email, 'verify-email', {
-        verificationUrl: this.mailService.buildUrl(
-          `/auth/verify-email?token=${encodeURIComponent(token)}`,
-        ),
-        expiresInHours: hours,
-        appName: this.appConfig.name,
-      })
-      .catch(() => undefined);
+    this.enqueueVerification(user, token, hours);
 
     return this.padded(generic, startedAt);
   }
@@ -217,15 +219,7 @@ export class AuthService {
 
     const hours = Math.round((expiresAt.getTime() - Date.now()) / 3_600_000);
 
-    void this.mailService
-      .sendTemplate(user.email, 'verify-email', {
-        verificationUrl: this.mailService.buildUrl(
-          `/auth/verify-email?token=${encodeURIComponent(token)}`,
-        ),
-        expiresInHours: hours,
-        appName: this.appConfig.name,
-      })
-      .catch(() => undefined);
+    this.enqueueVerification(user, token, hours);
   }
 
   /**
@@ -266,16 +260,7 @@ export class AuthService {
     // Not awaited: a provider that hangs must not hold the request open, and a
     // failure here is logged rather than turned into a failed reset. The token
     // is already stored, so the user can request another.
-    void this.mailService
-      .sendTemplate(user.email, 'reset-password', {
-        resetUrl: this.mailService.buildUrl(
-          `/auth/reset-password?token=${encodeURIComponent(token)}`,
-        ),
-        ip: ipAddress,
-        expiresInMinutes: minutes,
-        appName: this.appConfig.name,
-      })
-      .catch(() => undefined);
+    this.enqueueResetMail(user.email, token, ipAddress, minutes);
 
     return this.padded(generic, startedAt);
   }
@@ -288,6 +273,80 @@ export class AuthService {
    * response time finds the registered addresses without any clever analysis.
    * Both outcomes wait for the same floor, with the same jitter applied to both.
    */
+  /**
+   * Queues a verification email.
+   *
+   * Enqueued rather than sent, so the request does not wait for the provider. The
+   * render happens inside the job, not here, which means a template edited between
+   * the enqueue and the run is picked up rather than frozen at enqueue time.
+   */
+  private enqueueVerification(
+    user: { email: string; isEmailVerified: boolean },
+    token: string,
+    hours: number,
+  ): void {
+    if (user.isEmailVerified) {
+      return;
+    }
+
+    // One key per token. A resend mints a new token, so a key scoped to the
+    // address alone would suppress the replacement link the user just asked for.
+    this.enqueueMail(
+      {
+        to: user.email,
+        template: 'verify-email',
+        data: {
+          verificationUrl: this.mailService.buildUrl(
+            `/auth/verify-email?token=${encodeURIComponent(token)}`,
+          ),
+          expiresInHours: hours,
+          appName: this.appConfig.name,
+        },
+      },
+      dedupeKey({
+        template: 'verify-email',
+        to: user.email,
+        subjectId: token,
+      }),
+    );
+  }
+
+  private enqueueResetMail(
+    to: string,
+    token: string,
+    ipAddress: string,
+    minutes: number,
+  ): void {
+    this.enqueueMail(
+      {
+        to,
+        template: 'reset-password',
+        data: {
+          resetUrl: this.mailService.buildUrl(
+            `/auth/reset-password?token=${encodeURIComponent(token)}`,
+          ),
+          ip: ipAddress,
+          expiresInMinutes: minutes,
+          appName: this.appConfig.name,
+        },
+      },
+      dedupeKey({ template: 'reset-password', to, subjectId: token }),
+    );
+  }
+
+  /**
+   * Hands a mail to the queue, swallowing the enqueue failure.
+   *
+   * Not awaited and the rejection caught: the token is already stored, so a queue
+   * that is down costs the user one mail rather than the whole request, and they
+   * can ask for another.
+   */
+  private enqueueMail(payload: MailJobPayload, key: string): Promise<void> {
+    return this.jobQueue
+      .enqueue('mail', { name: MAIL_JOB, payload, dedupeKey: key })
+      .catch(() => undefined);
+  }
+
   protected async padded<T>(response: T, startedAt: number): Promise<T> {
     await padResponse({ startedAt });
 

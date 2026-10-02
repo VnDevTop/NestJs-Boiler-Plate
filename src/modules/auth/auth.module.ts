@@ -21,6 +21,7 @@ import { TwoFactorService } from './two-factor.service.js';
 import { JwtStrategy } from './strategies/index.js';
 import { jwtAccessTokenConfig, throttlerConfig } from '../../configs/index.js';
 import { MailModule } from '../mail/index.js';
+import { QueueModule } from '../queue/index.js';
 
 @Module({
   imports: [
@@ -34,6 +35,9 @@ import { MailModule } from '../mail/index.js';
     // Mail is an export of MailModule, so the template names and the transport
     // live in the mail module rather than in auth.
     MailModule,
+    // For the queue: auth enqueues mail instead of sending it, which is what
+    // keeps a slow provider out of the registration request.
+    QueueModule,
     TypeOrmModule.forFeature([
       RefreshToken,
       UserDevice,
