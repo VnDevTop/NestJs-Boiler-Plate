@@ -72,6 +72,11 @@ function harness(options: {
       slow('email_verification_tokens:update', undefined),
   };
 
+  const jobQueue = {
+    enqueue: vi.fn().mockResolvedValue(undefined),
+    driver: 'in-process' as const,
+  };
+
   const mailService = {
     sendTemplate: () => Promise.resolve({ mailId: 'm', delivered: true }),
     buildUrl: (path: string) => `https://app.example.com${path}`,
@@ -86,6 +91,7 @@ function harness(options: {
     passwordResetService as never,
     emailVerificationService as never,
     mailService as never,
+    jobQueue as never,
     { getOrThrow: () => appConfig } as never,
   );
 

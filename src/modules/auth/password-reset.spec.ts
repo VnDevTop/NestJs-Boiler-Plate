@@ -37,6 +37,11 @@ function harness(options: { userExists: boolean; userActive?: boolean }) {
     spendOutstandingFor: vi.fn().mockResolvedValue(undefined),
   };
 
+  const jobQueue = {
+    enqueue: vi.fn().mockResolvedValue(undefined),
+    driver: 'in-process' as const,
+  };
+
   const mailService = {
     sendTemplate: vi.fn().mockImplementation((_to, name, data) => {
       sent.push({ to: _to, resetUrl: data.resetUrl, ip: data.ip });
@@ -76,6 +81,7 @@ function harness(options: { userExists: boolean; userActive?: boolean }) {
     passwordResetService as never,
     emailVerificationService as never,
     mailService as never,
+    jobQueue as never,
     { getOrThrow: () => appConfig } as unknown as ConfigService,
   );
 
@@ -86,6 +92,7 @@ function harness(options: { userExists: boolean; userActive?: boolean }) {
     emailVerificationService,
     mailService,
     sent,
+    jobQueue,
   };
 }
 
@@ -156,16 +163,74 @@ describe('AuthService.forgotPassword', () => {
     expect(mailService.sendTemplate).not.toHaveBeenCalled();
   });
 
-  it('builds a link with the token in the query, not the path', async () => {
-    const { service, sent } = harness({ userExists: true });
+  it('queues the mail rather than sending it, so the request does not wait', async () => {
+    const { service, jobQueue, mailService } = harness({ userExists: true });
 
     await service.forgotPassword({ email: 'a@x.com' }, '203.0.113.7');
 
-    expect(sent[0].resetUrl).toContain('/auth/reset-password?token=');
+    expect(jobQueue.enqueue).toHaveBeenCalledTimes(1);
+    expect(mailService.sendTemplate).not.toHaveBeenCalled();
+  });
+
+  it('queues on the mail queue with the mail job name', async () => {
+    const { service, jobQueue } = harness({ userExists: true });
+
+    await service.forgotPassword({ email: 'a@x.com' }, '203.0.113.7');
+
+    const [queue, job] = jobQueue.enqueue.mock.calls[0];
+    expect(queue).toBe('mail');
+    expect(job.name).toBe('mail.send');
+  });
+
+  it('carries a dedupe key, so a redelivery sends no second reset mail', async () => {
+    const { service, jobQueue } = harness({ userExists: true });
+
+    await service.forgotPassword({ email: 'a@x.com' }, '203.0.113.7');
+
+    const [, job] = jobQueue.enqueue.mock.calls[0];
+    // Without this a bullmq redelivery mails the same token twice.
+    expect(job.dedupeKey).toMatch(/^dedupe:[0-9a-f]{64}$/);
+  });
+
+  it('puts no address in the dedupe key', async () => {
+    const { service, jobQueue } = harness({ userExists: true });
+
+    await service.forgotPassword({ email: 'ada@example.com' }, '203.0.113.7');
+
+    const [, job] = jobQueue.enqueue.mock.calls[0];
+    expect(job.dedupeKey).not.toContain('example.com');
+  });
+
+  it('builds a link with the token in the query, not the path', async () => {
+    const { service, jobQueue } = harness({ userExists: true });
+
+    await service.forgotPassword({ email: 'a@x.com' }, '203.0.113.7');
+
+    const [, job] = jobQueue.enqueue.mock.calls[0];
+    expect(job.payload.data.resetUrl).toContain('/auth/reset-password?token=');
+  });
+
+  it('does not await the queue, so a hanging enqueue cannot hold the request', async () => {
+    const { service, jobQueue } = harness({ userExists: true });
+    jobQueue.enqueue.mockReturnValue(new Promise(() => {}));
+
+    // The enqueue is fire and forget; the token is already stored either way.
+    await expect(
+      service.forgotPassword({ email: 'a@x.com' }, '203.0.113.7'),
+    ).resolves.toBeDefined();
+  });
+
+  it('survives a queue that rejects, so a mail outage is not a failed request', async () => {
+    const { service, jobQueue } = harness({ userExists: true });
+    jobQueue.enqueue.mockRejectedValue(new Error('redis down'));
+
+    await expect(
+      service.forgotPassword({ email: 'a@x.com' }, '203.0.113.7'),
+    ).resolves.toBeDefined();
   });
 
   it('url-encodes the token, so a base64url value cannot break the link', async () => {
-    const { service, passwordResetService, sent } = harness({
+    const { service, passwordResetService, jobQueue } = harness({
       userExists: true,
     });
     passwordResetService.issue.mockResolvedValue({
@@ -175,11 +240,12 @@ describe('AuthService.forgotPassword', () => {
 
     await service.forgotPassword({ email: 'a@x.com' }, '203.0.113.7');
 
-    expect(sent[0].resetUrl).toContain(encodeURIComponent('a+b/c='));
+    const [, job] = jobQueue.enqueue.mock.calls[0];
+    expect(job.payload.data.resetUrl).toContain(encodeURIComponent('a+b/c='));
   });
 
   it('tells the user how long the link lasts, in the units the token uses', async () => {
-    const { service, passwordResetService, sent } = harness({
+    const { service, passwordResetService, jobQueue } = harness({
       userExists: true,
     });
     passwordResetService.issue.mockResolvedValue({
@@ -189,26 +255,8 @@ describe('AuthService.forgotPassword', () => {
 
     await service.forgotPassword({ email: 'a@x.com' }, '203.0.113.7');
 
-    expect(sent[0].ip).toBe('203.0.113.7');
-  });
-
-  it('does not wait for the provider, so a hanging smtp cannot hold the request', async () => {
-    const { service, mailService } = harness({ userExists: true });
-    mailService.sendTemplate.mockReturnValue(new Promise(() => {}));
-
-    // Resolves rather than hanging: the send is fire and forget.
-    await expect(
-      service.forgotPassword({ email: 'a@x.com' }, '203.0.113.7'),
-    ).resolves.toBeDefined();
-  });
-
-  it('survives a provider that rejects, which must not fail the request', async () => {
-    const { service, mailService } = harness({ userExists: true });
-    mailService.sendTemplate.mockRejectedValue(new Error('smtp down'));
-
-    await expect(
-      service.forgotPassword({ email: 'a@x.com' }, '203.0.113.7'),
-    ).resolves.toBeDefined();
+    const [, job] = jobQueue.enqueue.mock.calls[0];
+    expect(job.payload.data.ip).toBe('203.0.113.7');
   });
 });
 

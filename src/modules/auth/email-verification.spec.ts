@@ -56,6 +56,11 @@ function harness(
     spendOutstandingFor: vi.fn().mockResolvedValue(undefined),
   };
 
+  const jobQueue = {
+    enqueue: vi.fn().mockResolvedValue(undefined),
+    driver: 'in-process' as const,
+  };
+
   const mailService = {
     sendTemplate: vi.fn().mockImplementation((_to, name, data) => {
       if (name === 'verify-email') {
@@ -98,6 +103,7 @@ function harness(
     passwordResetService as never,
     emailVerificationService as never,
     mailService as never,
+    jobQueue as never,
     {
       getOrThrow: () => appConfig,
     } as unknown as import('@nestjs/config').ConfigService,
@@ -110,6 +116,7 @@ function harness(
     emailVerificationService,
     mailService,
     sent,
+    jobQueue,
   };
 }
 
@@ -206,16 +213,60 @@ describe('AuthService.resendVerification', () => {
     expect(mailService.sendTemplate).not.toHaveBeenCalled();
   });
 
-  it('builds a link carrying the token', async () => {
-    const { service, sent } = harness();
+  it('queues the mail rather than sending it inline', async () => {
+    const { service, jobQueue, mailService } = harness();
 
     await service.resendVerification({ email: 'a@x.com' }, '203.0.113.7');
 
-    expect(sent[0].verificationUrl).toContain('/auth/verify-email?token=');
+    expect(jobQueue.enqueue).toHaveBeenCalledTimes(1);
+    expect(mailService.sendTemplate).not.toHaveBeenCalled();
+  });
+
+  it('builds a link carrying the token', async () => {
+    const { service, jobQueue } = harness();
+
+    await service.resendVerification({ email: 'a@x.com' }, '203.0.113.7');
+
+    const [, job] = jobQueue.enqueue.mock.calls[0];
+    expect(job.payload.data.verificationUrl).toContain(
+      '/auth/verify-email?token=',
+    );
+  });
+
+  it('carries a dedupe key, so a redelivery sends no second link', async () => {
+    const { service, jobQueue } = harness();
+
+    await service.resendVerification({ email: 'a@x.com' }, '203.0.113.7');
+
+    const [, job] = jobQueue.enqueue.mock.calls[0];
+    expect(job.dedupeKey).toMatch(/^dedupe:[0-9a-f]{64}$/);
+  });
+
+  it('mints a distinct key per token, so a resend is not blocked', async () => {
+    // Two resends mint two tokens. A key scoped to the address alone would
+    // suppress the second link the user just asked for.
+    const { service, emailVerificationService, jobQueue } = harness();
+
+    emailVerificationService.issue.mockResolvedValue({
+      token: 'token-a',
+      expiresAt: new Date(Date.now() + 3_600_000),
+    });
+    await service.resendVerification({ email: 'a@x.com' }, '203.0.113.7');
+
+    emailVerificationService.issue.mockResolvedValue({
+      token: 'token-b',
+      expiresAt: new Date(Date.now() + 3_600_000),
+    });
+    await service.resendVerification({ email: 'a@x.com' }, '203.0.113.7');
+
+    const first = jobQueue.enqueue.mock.calls[0][1].dedupeKey;
+    const second = jobQueue.enqueue.mock.calls[1][1].dedupeKey;
+
+    expect(first).not.toBe(second);
   });
 
   it('url-encodes the token', async () => {
-    const { service, emailVerificationService, sent } = harness();
+    const { service, emailVerificationService, jobQueue } = harness();
     emailVerificationService.issue.mockResolvedValue({
       token: 'a+b/c=',
       expiresAt: new Date(Date.now() + 3_600_000),
@@ -223,21 +274,24 @@ describe('AuthService.resendVerification', () => {
 
     await service.resendVerification({ email: 'a@x.com' }, '203.0.113.7');
 
-    expect(sent[0].verificationUrl).toContain(encodeURIComponent('a+b/c='));
+    const [, job] = jobQueue.enqueue.mock.calls[0];
+    expect(job.payload.data.verificationUrl).toContain(
+      encodeURIComponent('a+b/c='),
+    );
   });
 
-  it('does not wait for the provider', async () => {
-    const { service, mailService } = harness();
-    mailService.sendTemplate.mockReturnValue(new Promise(() => {}));
+  it('does not wait for the queue', async () => {
+    const { service, jobQueue } = harness();
+    jobQueue.enqueue.mockReturnValue(new Promise(() => {}));
 
     await expect(
       service.resendVerification({ email: 'a@x.com' }, '203.0.113.7'),
     ).resolves.toBeDefined();
   });
 
-  it('survives a provider rejection', async () => {
-    const { service, mailService } = harness();
-    mailService.sendTemplate.mockRejectedValue(new Error('smtp down'));
+  it('survives a queue rejection', async () => {
+    const { service, jobQueue } = harness();
+    jobQueue.enqueue.mockRejectedValue(new Error('redis down'));
 
     await expect(
       service.resendVerification({ email: 'a@x.com' }, '203.0.113.7'),
@@ -247,10 +301,10 @@ describe('AuthService.resendVerification', () => {
 
 describe('AuthService.register verification link', () => {
   it('does not add latency to registration', async () => {
-    // The account is created and the session issued; the link is fire and
-    // forget, so a provider that hangs cannot hold the request open.
-    const { service, mailService } = harness();
-    mailService.sendTemplate.mockReturnValue(new Promise(() => {}));
+    // The account is created and the session issued; the enqueue is fire and
+    // forget, so a queue that hangs cannot hold the request open.
+    const { service, jobQueue } = harness();
+    jobQueue.enqueue.mockReturnValue(new Promise(() => {}));
 
     await expect(
       service.register(
@@ -260,25 +314,27 @@ describe('AuthService.register verification link', () => {
     ).resolves.toBeDefined();
   });
 
-  it('sends a verification link for a new account', async () => {
-    const { service, sent } = harness();
+  it('queues a verification link for a new account', async () => {
+    const { service, jobQueue } = harness();
 
     await service.register(
       { email: 'a@x.com', password: 'password123' } as never,
       { ipAddress: '1.1.1.1' } as never,
     );
 
-    // The send is not awaited, so the assertion waits a tick for the promise
+    // The enqueue is not awaited, so the assertion waits a tick for the promise
     // chain to settle rather than relying on registration awaiting it.
     await new Promise((resolve) => setImmediate(resolve));
-    expect(
-      sent.some((m) => m.verificationUrl.includes('/auth/verify-email')),
-    ).toBe(true);
+
+    const [, job] = jobQueue.enqueue.mock.calls[0];
+    expect(job.name).toBe('mail.send');
+    expect(job.payload.template).toBe('verify-email');
+    expect(job.payload.data.verificationUrl).toContain('/auth/verify-email');
   });
 
-  it('still registers when the provider is down', async () => {
-    const { service, mailService } = harness();
-    mailService.sendTemplate.mockRejectedValue(new Error('smtp down'));
+  it('still registers when the queue is down', async () => {
+    const { service, jobQueue } = harness();
+    jobQueue.enqueue.mockRejectedValue(new Error('redis down'));
 
     await expect(
       service.register(

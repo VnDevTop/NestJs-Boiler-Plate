@@ -62,12 +62,20 @@ export interface MailTransport {
  * Timeouts, 5xx and connection errors are the retryable ones.
  */
 export function isPermanentRejection(error: unknown): boolean {
-  const status = extractStatus(error);
+  const status = extractStatusCode(error);
 
   return status !== null && status >= 400 && status < 500;
 }
 
-function extractStatus(error: unknown): number | null {
+/**
+ * The http status an error carries, across the shapes a client uses, or `null`
+ * when there is none.
+ *
+ * Exported because the reason a send failed is only available while the error is
+ * in hand, and the caller that decides whether to retry is not the one that
+ * caught it.
+ */
+export function extractStatusCode(error: unknown): number | null {
   if (typeof error !== 'object' || error === null) {
     return null;
   }

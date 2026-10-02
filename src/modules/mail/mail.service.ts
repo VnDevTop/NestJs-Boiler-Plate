@@ -14,11 +14,13 @@ import { MemoryMailTransport } from './transports/memory.transport.js';
 import { SendgridMailTransport } from './transports/sendgrid.transport.js';
 import { SesMailTransport } from './transports/ses.transport.js';
 import { SmtpMailTransport } from './transports/smtp.transport.js';
-import type {
-  MailAttachment,
-  MailMessage,
-  MailTransport,
-  SendResult,
+import {
+  extractStatusCode,
+  isPermanentRejection,
+  type MailAttachment,
+  type MailMessage,
+  type MailTransport,
+  type SendResult,
 } from './transports/transport.interface.js';
 
 const logger = new Logger('MailService');
@@ -30,8 +32,21 @@ export const MAIL_TRANSPORT = 'MAIL_TRANSPORT';
 export interface SendMailResult extends SendResult {
   mailId: string;
   template: TemplateName;
-  /** False when the configured transport was unavailable and memory took over. */
+  /** False when the send failed or the transport was unavailable. */
   delivered: boolean;
+  /**
+   * Set when `delivered` is false. True means the provider refused the request
+   * itself, so another attempt would be refused the same way.
+   *
+   * The processor needs this to decide whether to retry, and `deliver` is the
+   * only place that still has the error. Without it every failure looks
+   * transient and a 4xx burns the whole retry budget.
+   */
+  permanent?: boolean;
+  /** The provider's status code, when the error carried one. */
+  status?: number;
+  /** The failure message, for the log line and the dead-letter entry. */
+  error?: string;
 }
 
 export interface SendTemplateOptions {
@@ -140,6 +155,11 @@ export class MailService {
         mailId: message.mailId,
         template,
         delivered: false,
+        permanent: isPermanentRejection(error),
+        // Undefined rather than null when there is no status, so the field is
+        // simply absent from a network failure.
+        status: extractStatusCode(error) ?? undefined,
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }
