@@ -19,7 +19,7 @@ export class UserDevice {
   @Column({ type: 'uuid' })
   userId!: string;
 
-  @ManyToOne(() => User)
+  @ManyToOne(() => User, { onDelete: 'CASCADE' })
   user!: User;
 
   @Column({ type: 'varchar', length: 100, nullable: true })

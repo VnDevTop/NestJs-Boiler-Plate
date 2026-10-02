@@ -3,9 +3,13 @@ import {
   CreateDateColumn,
   Entity,
   Index,
+  JoinColumn,
+  ManyToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+
+import { User } from '../../users/entities/index.js';
 
 @Entity({ name: 'two_factor_secrets' })
 export class TwoFactorSecret {
@@ -15,6 +19,18 @@ export class TwoFactorSecret {
   @Index({ unique: true })
   @Column({ type: 'uuid' })
   userId!: string;
+
+  /**
+   * Declared so the foreign key exists in the schema.
+   *
+   * The column was there without a relation, so `migration:generate` produced no
+   * constraint at all: hard-deleting a user left the secret behind forever, which
+   * is precisely the row Phase 16 exists to remove. Cascading means the retention
+   * delete needs no second statement and no remembered ordering.
+   */
+  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'userId' })
+  user!: User;
 
   /**
    * The TOTP shared secret is never stored in the clear. The three parts come
