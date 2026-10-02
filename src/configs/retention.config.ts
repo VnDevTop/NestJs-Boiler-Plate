@@ -57,7 +57,7 @@ export interface RetentionAges {
   auditLogs: number;
 }
 
-const DEFAULT_AGES: RetentionAges = {
+export const DEFAULT_AGES: RetentionAges = {
   softDeletedUsers: 30,
   emailVerificationTokens: 7,
   passwordResetTokens: 7,

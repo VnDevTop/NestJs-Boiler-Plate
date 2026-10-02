@@ -340,6 +340,17 @@ login attempt bookkeeping     delete rows older than N                7
 two-factor secrets            cascade with the user delete             -
 ```
 
+Decisions taken against the policy above:
+
+- `two_factor_secrets` is not a target of its own. Now that it has a cascading
+  foreign key, the user delete removes it.
+- `mail_logs`, `notification_logs`, login-attempt bookkeeping and `audit_logs`
+  stay out of the policy until their tables exist. A rule naming a missing table
+  would fail on every run.
+- The `user_devices` rule does discard the `ipAddress` and `userAgent` of past
+  logins along with the row. It returned 2 rows out of 40 on live data, which is
+  a cheap trade, and device rows are otherwise bounded by the user count.
+
 Expected outcome:
 
 - Table sizes flatten out under normal traffic instead of growing forever.
