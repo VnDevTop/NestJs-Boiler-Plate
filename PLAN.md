@@ -236,7 +236,7 @@ feat: add transactional email with pluggable transports
 
 ## Phase 15: Background Job Queue
 
-Status: Pending
+Status: Done
 
 Goal:
 
@@ -245,24 +245,46 @@ retention job a scheduler.
 
 Tasks:
 
-- [ ] Add `@nestjs/bullmq` as an optional dependency, resolved through
+- [x] Add `@nestjs/bullmq` as an optional dependency, resolved through
       `loadOptional`, not a static import
-- [ ] Create `src/modules/queue` with a provider-level abstraction over the
+- [x] Create `src/modules/queue` with a provider-level abstraction over the
       queue so the module imports cleanly when the package is absent
-- [ ] Create queues: `mail`, `notification`, `maintenance`, `digest`
-- [ ] Move the mail send from Phase 14 into `processors/mail.processor.ts`
-- [ ] Add `retry.policy.ts`: exponential backoff, 5 attempts
-- [ ] Mark provider 4xx responses as non-retryable, retry only timeouts, 5xx
+- [x] Create queues: `mail`, `notification`, `maintenance`, `digest`
+- [x] Move the mail send from Phase 14 into `processors/mail.processor.ts`
+- [x] Add `retry.policy.ts`: exponential backoff, 5 attempts
+- [x] Mark provider 4xx responses as non-retryable, retry only timeouts, 5xx
       and connection errors
-- [ ] Send exhausted jobs to a dead-letter list in Redis and raise a log alarm
-- [ ] Add an in-process fallback: when the queue is disabled or Redis is
+- [x] Send exhausted jobs to a dead-letter list in Redis and raise a log alarm
+- [x] Add an in-process fallback: when the queue is disabled or Redis is
       unreachable, run the same processor under a bounded concurrency limiter
-- [ ] Add an idempotency guard, `template + recipient + subject id`, using a
+- [x] Add an idempotency guard, `template + recipient + subject id`, using a
       Redis `SET NX` with a TTL matching the retry window
-- [ ] Register the cron entry points, disabling them with `QUEUE_ENABLED=false`
+- [x] Register the cron entry points, disabling them with `QUEUE_ENABLED=false`
 
 Implementation note: the fallback must call the same processor function as the
 queue does, so there is one implementation of the work and not two that drift.
+
+What was decided along the way, and why:
+
+- **`bullmq` is a dev dependency, not a runtime one.** The adapter has to be
+  tested against the real library; a queue adapter that has never run is one that
+  is broken. Production still ships without it unless the queue is enabled.
+- **Deduplication sits around the processor, not at `enqueue`.** A queue is
+  at-least-once and the duplicate arrives at _execution_. A key is also released
+  when a job fails retryably, because holding it would make the retry skip itself,
+  bullmq record success, and the mail never be sent. Verified against a real
+  redis: a repeated delivery is skipped, and a released key lets the retry run.
+- **A redis outage fails open.** Losing a dedupe key risks a duplicate; refusing
+  the job would lose a real email.
+- **The dead-letter list is redis, not a table.** It is operational data read at
+  3am and worthless after a few days; a table would mean something Phase 16 has to
+  remember to purge.
+- **`ScheduleModule` was added but no cron entry uses it yet.** The only recurring
+  work is the retention job, which arrives with Phase 16. Entries will not be
+  gated on the queue driver, so they keep running when redis is down.
+- **A redis key prefix gap from Phase 12/13 was found and fixed here:** the raw
+  client did not namespace keys the way keyv does for the cache, so every dedupe
+  and dead-letter key would have been written unprefixed.
 
 Expected outcome:
 
@@ -683,7 +705,7 @@ lands after the harness in Phase 12 is solid.
 | Phase 12 | Optional Integration Foundation                | Done    |
 | Phase 13 | Configuration Expansion                        | Done    |
 | Phase 14 | Outbound Email                                 | Done    |
-| Phase 15 | Background Job Queue                           | Pending |
+| Phase 15 | Background Job Queue                           | Done    |
 | Phase 16 | Data Retention and Cleanup                     | Pending |
 | Phase 17 | Authentication and Authorization through Cache | Pending |
 | Phase 18 | Notifications                                  | Pending |
