@@ -134,25 +134,28 @@ and nothing in `common` may know what your business does.
 ## Documentation
 
 Each folder documents itself, so an explanation sits where you are already
-looking.
+looking. The `docs/` folder is also published as a site at
+<https://vndevtop.github.io/NestJs-BoilerPlate/>.
 
-|                                                  |                                                           |
-| ------------------------------------------------ | --------------------------------------------------------- |
-| [PLAN.md](PLAN.md)                               | the phases, their status, and what is still open          |
-| [ROADMAP.md](ROADMAP.md)                         | what is shipped, open decisions, and enhancement plans    |
-| [CHANGELOG.md](CHANGELOG.md)                     | what each change did and why, per commit                  |
-| [docs/production.md](docs/production.md)         | rate limiting, headers, CORS, logging, health, Docker, CI |
-| [src/configs](src/configs/README.md)             | configuration namespaces and environment validation       |
-| [src/database](src/database/README.md)           | migrations, seeds, the standalone data source             |
-| [src/common](src/common/README.md)               | guards, decorators, middleware, utilities                 |
-| [src/core](src/core/README.md)                   | technical capabilities                                    |
-| [src/core/cache](src/core/cache/README.md)       | coalescing, stale while revalidate, invalidation          |
-| [src/core/health](src/core/health/README.md)     | liveness vs readiness                                     |
-| [src/core/logger](src/core/logger/README.md)     | development colours vs production JSON                    |
-| [src/modules](src/modules/README.md)             | module rules and the full route list                      |
-| [src/modules/auth](src/modules/auth/README.md)   | sessions, rotation, devices, two-factor                   |
-| [src/modules/users](src/modules/users/README.md) | the user domain and its authorisation                     |
-| [src/modules/admin](src/modules/admin/README.md) | operator-only routes                                      |
+|                                                                |                                                           |
+| -------------------------------------------------------------- | --------------------------------------------------------- |
+| [PLAN.md](PLAN.md)                                             | the phases, their status, and what is still open          |
+| [ROADMAP.md](ROADMAP.md)                                       | what is shipped, open decisions, and enhancement plans    |
+| [CHANGELOG.md](CHANGELOG.md)                                   | what each change did and why, per commit                  |
+| [docs/](docs/)                                                 | the guides, also published as a site                      |
+| [docs/production.md](docs/production.md)                       | rate limiting, headers, CORS, logging, health, Docker, CI |
+| [docs/optional-integrations.md](docs/optional-integrations.md) | how an optional dependency stays out of the install       |
+| [src/configs](src/configs/README.md)                           | configuration namespaces and environment validation       |
+| [src/database](src/database/README.md)                         | migrations, seeds, the standalone data source             |
+| [src/common](src/common/README.md)                             | guards, decorators, middleware, utilities                 |
+| [src/core](src/core/README.md)                                 | technical capabilities                                    |
+| [src/core/cache](src/core/cache/README.md)                     | coalescing, stale while revalidate, invalidation          |
+| [src/core/health](src/core/health/README.md)                   | liveness vs readiness                                     |
+| [src/core/logger](src/core/logger/README.md)                   | development colours vs production JSON                    |
+| [src/modules](src/modules/README.md)                           | module rules and the full route list                      |
+| [src/modules/auth](src/modules/auth/README.md)                 | sessions, rotation, devices, two-factor                   |
+| [src/modules/users](src/modules/users/README.md)               | the user domain and its authorisation                     |
+| [src/modules/admin](src/modules/admin/README.md)               | operator-only routes                                      |
 
 ## Known limitations
 
