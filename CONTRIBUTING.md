@@ -6,8 +6,8 @@ the bar is mostly about clarity rather than cleverness.
 ## Getting set up
 
 ```bash
-git clone https://github.com/VnDevTop/NestJs-Boiler-Plate.git
-cd NestJs-Boiler-Plate
+git clone https://github.com/VnDevTop/NestJs-Boilerplate.git
+cd NestJs-Boilerplate
 npm install          # also installs the git hooks through the prepare script
 cp .env.example .env
 ```

@@ -5,7 +5,7 @@
 Please do not open a public issue for a security problem.
 
 Report it privately through GitHub's
-[private vulnerability reporting](https://github.com/VnDevTop/NestJs-Boiler-Plate/security/advisories/new),
+[private vulnerability reporting](https://github.com/VnDevTop/NestJs-Boilerplate/security/advisories/new),
 or by email to <hi@vndev.top>.
 
 Include what an attacker can do, how to do it, and which version or commit is

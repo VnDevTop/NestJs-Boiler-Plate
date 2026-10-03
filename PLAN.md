@@ -682,19 +682,19 @@ Tasks:
       effect on the next send rather than after a TTL
 - [ ] Add `GET/PUT /admin/mail-templates/:name` behind a permission, writing an
       audit entry through the Phase 19 audit log
-- [ ] Reject a stored template containing `{{{`, since raw interpolation of a
-      user-controlled field is stored XSS in the mail client
+- [ ] Reject a stored template containing the triple-brace form, since raw
+      interpolation of a user-controlled field is stored XSS in the mail client
 - [ ] Keep the per-template data contract: the admin form lists the allowed
       fields, so an editor cannot add a variable no call site supplies
 - [ ] Preview a stored template against sample data before saving it
 - [ ] Purge template versions older than the Phase 16 retention window
 
 Implementation note: a stored template is untrusted input even though only an
-admin writes it. Handlebars escapes `{{ }}` and not `{{{ }}}`, so a template
-that opts out of escaping turns a first name into script in a mail client. The
-narrow rule is that the `{{{` sequence is rejected in anything read from the
-database, while a `.hbs` file in the repository is trusted because it went
-through review.
+admin writes it. Handlebars escapes the double-brace form and not the
+triple-brace one, so a template that opts out of escaping turns a first name
+into script in a mail client. The narrow rule is that the triple-brace sequence
+is rejected in anything read from the database, while a `.hbs` file in the
+repository is trusted because it went through review.
 
 Expected outcome:
 

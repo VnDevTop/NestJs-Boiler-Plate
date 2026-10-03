@@ -93,12 +93,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/VnDevTop/NestJs-Boiler-Plate.git"
+    "url": "git+https://github.com/VnDevTop/NestJs-Boilerplate.git"
   },
   "bugs": {
-    "url": "https://github.com/VnDevTop/NestJs-Boiler-Plate/issues"
+    "url": "https://github.com/VnDevTop/NestJs-Boilerplate/issues"
   },
-  "homepage": "https://github.com/VnDevTop/NestJs-Boiler-Plate#readme",
+  "homepage": "https://github.com/VnDevTop/NestJs-Boilerplate#readme",
   "keywords": [
     "nestjs",
     "boilerplate",

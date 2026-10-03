@@ -18,12 +18,12 @@ project rather than about running it. GitHub renders them on their own pages:
 
 | File                                                                                     | About                                          |
 | ---------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| [README](https://github.com/VnDevTop/NestJs-BoilerPlate/blob/main/README.md)             | what the template contains and how to start it |
-| [PLAN](https://github.com/VnDevTop/NestJs-BoilerPlate/blob/main/PLAN.md)                 | the phase-by-phase build plan and its status   |
-| [ROADMAP](https://github.com/VnDevTop/NestJs-BoilerPlate/blob/main/ROADMAP.md)           | what comes after the current phases            |
-| [CONTRIBUTING](https://github.com/VnDevTop/NestJs-BoilerPlate/blob/main/CONTRIBUTING.md) | how to propose a change                        |
-| [SECURITY](https://github.com/VnDevTop/NestJs-BoilerPlate/blob/main/SECURITY.md)         | how to report a vulnerability                  |
-| [CHANGELOG](https://github.com/VnDevTop/NestJs-BoilerPlate/blob/main/CHANGELOG.md)       | released changes                               |
+| [README](https://github.com/VnDevTop/NestJs-Boilerplate/blob/main/README.md)             | what the template contains and how to start it |
+| [PLAN](https://github.com/VnDevTop/NestJs-Boilerplate/blob/main/PLAN.md)                 | the phase-by-phase build plan and its status   |
+| [ROADMAP](https://github.com/VnDevTop/NestJs-Boilerplate/blob/main/ROADMAP.md)           | what comes after the current phases            |
+| [CONTRIBUTING](https://github.com/VnDevTop/NestJs-Boilerplate/blob/main/CONTRIBUTING.md) | how to propose a change                        |
+| [SECURITY](https://github.com/VnDevTop/NestJs-Boilerplate/blob/main/SECURITY.md)         | how to report a vulnerability                  |
+| [CHANGELOG](https://github.com/VnDevTop/NestJs-Boilerplate/blob/main/CHANGELOG.md)       | released changes                               |
 
 ## Configuration reference
 
@@ -34,15 +34,19 @@ fails validation rather than falling back to a default nobody chose.
 
 ## A note on how this site is built
 
-It is not. GitHub serves this folder directly and renders the markdown, so there
-is no build step and nothing to keep in sync with a generator. Two consequences
-worth knowing:
+It is not. GitHub runs Jekyll over the repository on every push, so there is no
+build step to run locally and nothing to keep in sync with a generator. Pages is
+set to publish the repository root, which has two consequences worth knowing.
 
-- **Do not add a `.nojekyll` file.** That file tells GitHub to skip Jekyll and
-  serve every file exactly as it is on disk, which means the markdown arrives as
-  plain text instead of a rendered page. The docs only work because Jekyll is
+- **Every markdown file in the repository is rendered, not just this folder.**
+  `README.md` becomes the site index and `PLAN.md`, `ROADMAP.md` and the rest
+  each become a page. A mistake in any of them fails the whole build, which is
+  why `PLAN.md` spells out Handlebars' brace forms in words.
+- **Do not add a `.nojekyll` file.** It tells GitHub to skip Jekyll and serve
+  every file exactly as it sits on disk, which means the markdown arrives as
+  plain text instead of a rendered page. The site only works because Jekyll is
   doing the rendering.
-- **Avoid Liquid delimiters.** Jekyll scans every file for its own template
-  delimiters and tries to evaluate anything it finds. Nothing here uses them, and
-  a snippet that did would break the page it appears on — including this
-  sentence, which is why it names them in words instead of writing them out.
+
+If the docs ever outgrow what the repository root can carry, the alternative is
+to point Pages at this folder alone and generate the markdown properly. Nothing
+here is written in a way that would have to be rewritten to move.
