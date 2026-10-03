@@ -1,4 +1,4 @@
-import type { DataSource, QueryRunner } from 'typeorm';
+import type { DataSource } from 'typeorm';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
