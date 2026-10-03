@@ -1,4 +1,7 @@
-import type { DataSource } from 'typeorm';
+import type { DataSource, Repository } from 'typeorm';
+
+import { MaintenanceLog } from './entities/maintenance-log.entity.js';
+import { RetentionTrigger } from './entities/retention-trigger.enum.js';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -77,6 +80,12 @@ interface Harness {
   service: RetentionService;
   runner: FakeQueryRunner;
   sleep: ReturnType<typeof vi.fn>;
+  /** The repository fake, exposed so the recorded row can be inspected. */
+  logs: {
+    create: (entry: unknown) => unknown;
+    save: ReturnType<typeof vi.fn>;
+    find: ReturnType<typeof vi.fn>;
+  };
   /** Default run options, so a test can override only what it cares about. */
   run: RetentionService['run'];
 }
@@ -95,21 +104,31 @@ function harness(options: {
   const dataSource = {
     createQueryRunner: () => runner,
   } as unknown as DataSource;
+  const logs = {
+    create: (entry: unknown) => entry,
+    save: vi.fn().mockImplementation(async (entry: unknown) => entry),
+    find: vi.fn().mockResolvedValue([]),
+  };
 
-  const service = new RetentionService(dataSource, {
-    enabled: true,
-    dryRun: options.dryRun ?? false,
-    schedule: '17 3 * * *',
-    batchSize: options.batchSize ?? 5_000,
-    batchDelay: options.batchDelay ?? 100,
-    runTimeout: options.runTimeout ?? 3_600_000,
-    ages: { ...DEFAULT_AGES, ...options.ages },
-  });
+  const service = new RetentionService(
+    dataSource,
+    {
+      enabled: true,
+      dryRun: options.dryRun ?? false,
+      schedule: '17 3 * * *',
+      batchSize: options.batchSize ?? 5_000,
+      batchDelay: options.batchDelay ?? 100,
+      runTimeout: options.runTimeout ?? 3_600_000,
+      ages: { ...DEFAULT_AGES, ...options.ages },
+    },
+    logs as unknown as Repository<MaintenanceLog>,
+  );
 
   return {
     service,
     runner,
     sleep,
+    logs,
     run: (overrides = {}) =>
       service.run({ now: options.now, sleep, ...overrides }),
   };
@@ -131,6 +150,23 @@ function advancingClock(stepMs: number): () => number {
 }
 
 const POLICY_LENGTH = 5;
+
+function entry(): MaintenanceLog {
+  return {
+    id: '11111111-1111-1111-1111-111111111111',
+    startedAt: new Date('2026-10-03T03:17:00.000Z'),
+    finishedAt: new Date('2026-10-03T03:17:01.234Z'),
+    durationMs: 1_234,
+    dryRun: true,
+    totalDeleted: 0,
+    timedOut: false,
+    trigger: RetentionTrigger.Cron,
+    pending: [],
+    failedTargets: [],
+    targets: [],
+    createdAt: new Date('2026-10-03T03:17:01.234Z'),
+  } as MaintenanceLog;
+}
 
 describe('RetentionService', () => {
   let h: Harness;
@@ -588,6 +624,106 @@ describe('RetentionService', () => {
       });
 
       expect(result.durationMs).toBeGreaterThan(0);
+    });
+  });
+
+  describe('record', () => {
+    const finished = {
+      dryRun: false,
+      startedAt: '2026-10-03T03:17:00.000Z',
+      durationMs: 1_234,
+      timedOut: false,
+      pending: ['user-devices'],
+      totalDeleted: 42,
+      failed: ['refresh-tokens'],
+      targets: [],
+    };
+
+    it('writes the row a run produced', async () => {
+      await h.service.record(finished, RetentionTrigger.Admin);
+
+      expect(h.logs.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('derives finishedAt from startedAt plus the duration', async () => {
+      await h.service.record(finished, RetentionTrigger.Admin);
+
+      const row = h.logs.save.mock.calls[0][0] as { finishedAt: Date };
+
+      // Asserted because a wrong end time makes the history read as if every run
+      // finished before it started, and nothing else in the row would show it.
+      expect(row.finishedAt.toISOString()).toBe('2026-10-03T03:17:01.234Z');
+    });
+
+    it('keeps the trigger that asked for the run', async () => {
+      await h.service.record(finished, RetentionTrigger.Admin);
+
+      const row = h.logs.save.mock.calls[0][0] as { trigger: string };
+
+      expect(row.trigger).toBe('admin');
+    });
+
+    it('copies the two lists rather than aliasing the result', async () => {
+      await h.service.record(finished, RetentionTrigger.Cron);
+
+      const row = h.logs.save.mock.calls[0][0] as {
+        pending: string[];
+        failedTargets: string[];
+      };
+
+      // Aliasing would let a later mutation of the run result rewrite a row that
+      // is supposed to be an immutable record.
+      expect(row.pending).not.toBe(finished.pending);
+      expect(row.failedTargets).not.toBe(finished.failed);
+      expect(row.pending).toEqual(['user-devices']);
+    });
+
+    it('lets an insert failure surface to the caller', async () => {
+      h.logs.save.mockRejectedValue(new Error('disk full'));
+
+      // Swallowing here would make a completed cleanup indistinguishable from an
+      // unrecorded one, and only one of them can be retried.
+      await expect(
+        h.service.record(finished, RetentionTrigger.Cron),
+      ).rejects.toThrow('disk full');
+    });
+  });
+
+  describe('latest', () => {
+    it('uses a limited find, not findOne', async () => {
+      // findOne with an order and no where throws "You must provide selection
+      // conditions in order to find a single row" the first time it meets a
+      // non-empty table. A repository mock never surfaced that, so the shape of
+      // the call is pinned here instead.
+      h.logs.find = vi.fn().mockResolvedValue([entry()]) as never;
+
+      await h.service.latest();
+
+      expect(h.logs.find).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 1 }),
+      );
+    });
+
+    it('asks for the newest first', async () => {
+      h.logs.find = vi.fn().mockResolvedValue([]) as never;
+
+      await h.service.latest();
+
+      expect(h.logs.find).toHaveBeenCalledWith(
+        expect.objectContaining({ order: { startedAt: 'DESC' } }),
+      );
+    });
+
+    it('returns null on an empty history rather than throwing', async () => {
+      h.logs.find = vi.fn().mockResolvedValue([]) as never;
+
+      expect(await h.service.latest()).toBeNull();
+    });
+
+    it('returns the row when there is one', async () => {
+      h.logs.find = vi.fn().mockResolvedValue([entry()]) as never;
+
+      expect(await h.service.latest()).toEqual(entry());
     });
   });
 

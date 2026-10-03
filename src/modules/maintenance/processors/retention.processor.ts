@@ -1,10 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 
 import type { Job, JobResult } from '../../queue/queue.interface.js';
 import { RetentionTrigger } from '../entities/retention-trigger.enum.js';
-import { MaintenanceLog } from '../entities/maintenance-log.entity.js';
 import {
   RetentionService,
   type RetentionRunResult,
@@ -36,11 +33,7 @@ export interface RetentionJobPayload {
 export class RetentionProcessor {
   private readonly logger = new Logger(RetentionProcessor.name);
 
-  constructor(
-    private readonly retentionService: RetentionService,
-    @InjectRepository(MaintenanceLog)
-    private readonly logs: Repository<MaintenanceLog>,
-  ) {}
+  constructor(private readonly retentionService: RetentionService) {}
 
   /** True for the job name this processor handles, so routing stays in one place. */
   static handles(name: string): boolean {
@@ -77,7 +70,10 @@ export class RetentionProcessor {
     }
 
     try {
-      await this.record(result, payload.trigger ?? RetentionTrigger.Cron);
+      await this.retentionService.record(
+        result,
+        payload.trigger ?? RetentionTrigger.Cron,
+      );
     } catch (error) {
       // The rows are already gone; only the record of it is missing. Retryable
       // because the next attempt re-runs an idempotent cleanup and tries the
@@ -122,30 +118,6 @@ export class RetentionProcessor {
     }
 
     return { ok: true };
-  }
-
-  private async record(
-    result: RetentionRunResult,
-    trigger: RetentionTrigger,
-  ): Promise<void> {
-    const finishedAt = new Date(
-      new Date(result.startedAt).getTime() + result.durationMs,
-    );
-
-    await this.logs.insert({
-      startedAt: new Date(result.startedAt),
-      finishedAt,
-      durationMs: result.durationMs,
-      dryRun: result.dryRun,
-      totalDeleted: result.totalDeleted,
-      timedOut: result.timedOut,
-      trigger,
-      pending: [...result.pending],
-      failedTargets: [...result.failed],
-      // Spread rather than assigned: the service types the list as readonly, and
-      // TypeORM will not take a readonly array where it writes entities.
-      targets: [...result.targets],
-    });
   }
 
   private validate(payload: unknown): RetentionJobPayload | null {

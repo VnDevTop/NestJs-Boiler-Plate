@@ -1,10 +1,7 @@
-import type { Repository } from 'typeorm';
-
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MaintenanceLog } from '../entities/maintenance-log.entity.js';
 import { RetentionTrigger } from '../entities/retention-trigger.enum.js';
-import type { MaintenanceLog as LogEntity } from '../entities/maintenance-log.entity.js';
 import {
   RETENTION_JOB,
   RetentionProcessor,
@@ -64,14 +61,16 @@ function harness(result: RetentionRunResult | Error = runResult()): Harness {
     result instanceof Error
       ? vi.fn().mockRejectedValue(result)
       : vi.fn().mockResolvedValue(result);
-  const insert = vi.fn().mockResolvedValue({ identifiers: [] });
-  const logs = { insert } as unknown as Repository<LogEntity>;
+  // The processor records through the service, so the fake stands in for the
+  // service's public surface rather than a repository the processor no longer
+  // touches. `insert` keeps its name so the call assertions read the same.
+  const insert = vi.fn().mockResolvedValue({ id: 'log-1' });
 
   return {
-    processor: new RetentionProcessor(
-      { run } as unknown as RetentionService,
-      logs,
-    ),
+    processor: new RetentionProcessor({
+      run,
+      record: insert,
+    } as unknown as RetentionService),
     run,
     insert,
   };
@@ -131,80 +130,32 @@ describe('RetentionProcessor', () => {
     });
   });
 
-  describe('what it writes', () => {
-    it('records the row counts and timings from the run', async () => {
+  describe('recording the run', () => {
+    it('hands the result to the service to record', async () => {
       await h.processor.process(job({}));
 
-      const row = h.insert.mock.calls[0][0] as Record<string, unknown>;
-
-      expect(row.totalDeleted).toBe(42);
-      expect(row.durationMs).toBe(1_234);
-      expect(row.dryRun).toBe(false);
-      expect(row.timedOut).toBe(false);
+      // The row shape is the service's business now. What the processor owns is
+      // that a completed run is recorded at all, and with which trigger.
+      expect(h.insert).toHaveBeenCalledTimes(1);
+      expect(h.insert.mock.calls[0][0]).toMatchObject({ totalDeleted: 42 });
     });
 
-    it('derives finishedAt from startedAt plus the duration', async () => {
+    it('labels an unlabelled run as coming from cron', async () => {
       await h.processor.process(job({}));
 
-      const row = h.insert.mock.calls[0][0] as { finishedAt: Date };
-
-      // The run reports a duration and a start but no end, so the end has to be
-      // reconstructed. Asserted because getting it wrong makes the history read
-      // as if every run finished before it began.
-      expect(row.finishedAt.toISOString()).toBe('2026-10-03T03:17:01.234Z');
+      expect(h.insert.mock.calls[0][1]).toBe(RetentionTrigger.Cron);
     });
 
-    it('stores the per-target detail, which is the point of keeping it', async () => {
-      await h.processor.process(job({}));
-
-      const row = h.insert.mock.calls[0][0] as { targets: { id: string }[] };
-
-      expect(row.targets.map((entry) => entry.id)).toEqual([
-        'users',
-        'refresh-tokens',
-      ]);
-    });
-
-    it('copies the pending and failed lists rather than sharing them', async () => {
-      h = harness(
-        runResult({ pending: ['user-devices'], failed: ['refresh-tokens'] }),
-      );
-
-      await h.processor.process(job({}));
-
-      const row = h.insert.mock.calls[0][0] as {
-        pending: string[];
-        failedTargets: string[];
-      };
-
-      expect(row.pending).toEqual(['user-devices']);
-      expect(row.failedTargets).toEqual(['refresh-tokens']);
-    });
-
-    it('defaults the trigger to cron', async () => {
-      await h.processor.process(job({}));
-
-      const row = h.insert.mock.calls[0][0] as { trigger: string };
-
-      expect(row.trigger).toBe(RetentionTrigger.Cron);
-    });
-
-    it('records a manual run as manual', async () => {
+    it('keeps the trigger the job carried', async () => {
       await h.processor.process(job({ trigger: RetentionTrigger.Manual }));
 
-      const row = h.insert.mock.calls[0][0] as { trigger: string };
-
-      expect(row.trigger).toBe(RetentionTrigger.Manual);
+      expect(h.insert.mock.calls[0][1]).toBe(RetentionTrigger.Manual);
     });
 
-    it('records a dry run as a dry run', async () => {
-      h = harness(runResult({ dryRun: true }));
+    it('keeps an admin trigger, so the column distinguishes the sources', async () => {
+      await h.processor.process(job({ trigger: RetentionTrigger.Admin }));
 
-      await h.processor.process(job({ dryRun: true }));
-
-      const row = h.insert.mock.calls[0][0] as { dryRun: boolean };
-
-      expect(row.dryRun).toBe(true);
+      expect(h.insert.mock.calls[0][1]).toBe(RetentionTrigger.Admin);
     });
   });
 

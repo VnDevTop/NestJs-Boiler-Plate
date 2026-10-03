@@ -1,8 +1,12 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
 import type { DataSource, QueryRunner } from 'typeorm';
+import { Repository } from 'typeorm';
 
 import { retentionConfig } from '../../configs/retention.config.js';
+import { MaintenanceLog } from './entities/maintenance-log.entity.js';
+import { RetentionTrigger } from './entities/retention-trigger.enum.js';
 import {
   buildRetentionPolicy,
   resolveCutoff,
@@ -110,6 +114,8 @@ export class RetentionService {
     private readonly dataSource: DataSource,
     @Inject(retentionConfig.KEY)
     private readonly config: ConfigType<typeof retentionConfig>,
+    @InjectRepository(MaintenanceLog)
+    private readonly logs: Repository<MaintenanceLog>,
   ) {}
 
   async run(options: RetentionRunOptions = {}): Promise<RetentionRunResult> {
@@ -301,6 +307,82 @@ export class RetentionService {
 
       throw error;
     }
+  }
+
+  /**
+   * Appends a run to the history.
+   *
+   * Public because three callers record runs: the processor for a queued job, the
+   * admin route for a dry run, and anyone running the job from a terminal. Keeping
+   * it here means the row is written one way, and the `trigger` on it is the only
+   * record of who asked.
+   *
+   * Throws on failure rather than swallowing, so the caller can tell a completed
+   * cleanup from an unrecorded one. The two are different: the rows are gone
+   * either way, and only one of them can be retried.
+   */
+  async record(
+    result: RetentionRunResult,
+    trigger: RetentionTrigger,
+  ): Promise<MaintenanceLog> {
+    const entry = this.logs.create({
+      startedAt: new Date(result.startedAt),
+      finishedAt: new Date(
+        new Date(result.startedAt).getTime() + result.durationMs,
+      ),
+      durationMs: result.durationMs,
+      dryRun: result.dryRun,
+      totalDeleted: result.totalDeleted,
+      timedOut: result.timedOut,
+      trigger,
+      pending: [...result.pending],
+      failedTargets: [...result.failed],
+      targets: [...result.targets],
+    });
+
+    return this.logs.save(entry);
+  }
+
+  /**
+   * Reads the history, newest first.
+   *
+   * `COUNT(*) OVER()` counts the matching rows in the same round trip rather than
+   * issuing a second query, which matters only because Postgres makes it easy.
+   * The table holds about one row a day, so this is a sequential scan either way
+   * and an index on `startedAt` would cost more to maintain than it saves.
+   */
+  async history(options: {
+    limit: number;
+    offset: number;
+  }): Promise<{ items: MaintenanceLog[]; total: number }> {
+    const rows = await this.logs
+      .createQueryBuilder('run')
+      .orderBy('run.startedAt', 'DESC')
+      .limit(options.limit)
+      .offset(options.offset)
+      .select('run')
+      .addSelect('COUNT(*) OVER() AS "runCount"')
+      .getRawAndEntities();
+
+    return {
+      items: rows.entities,
+      total: rows.raw.length === 0 ? 0 : Number(rows.raw[0]['runCount'] ?? 0),
+    };
+  }
+
+  /** The most recent run, or null when nothing has ever run. */
+  async latest(): Promise<MaintenanceLog | null> {
+    // `find` with a limit rather than `findOne`. TypeORM refuses a `findOne`
+    // that carries no `where`, throwing "You must provide selection conditions
+    // in order to find a single row" the first time this runs against a
+    // non-empty table. A repository mock never reached that, which is why it
+    // passed every test and failed on the first real call.
+    const [entry] = await this.logs.find({
+      order: { startedAt: 'DESC' },
+      take: 1,
+    });
+
+    return entry ?? null;
   }
 
   private log(result: RetentionRunResult): void {
