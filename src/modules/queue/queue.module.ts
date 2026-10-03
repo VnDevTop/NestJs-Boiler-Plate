@@ -3,11 +3,13 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 
 import { queueConfig, type QueueConfig } from '../../configs/queue.config.js';
 import { MailModule } from '../mail/index.js';
+import { MaintenanceModule } from '../maintenance/index.js';
 import { BullMqDispatcher } from './bullmq.dispatcher.js';
 import { DeadLetterService } from './dead-letter.service.js';
 import { DedupeGuard } from './dedupe.guard.js';
 import { InProcessDispatcher } from './in-process.dispatcher.js';
 import type { ProcessorRegistry } from './in-process.dispatcher.js';
+import { RetentionProcessor } from '../maintenance/processors/retention.processor.js';
 import { MailProcessor } from './processors/mail.processor.js';
 import { ProcessorRouter } from './processor-router.service.js';
 import type { JobQueue } from './queue.interface.js';
@@ -39,9 +41,14 @@ const configOf = (configService: ConfigService): QueueConfig =>
  * redis is down — which is when the database most needs cleaning.
  */
 @Module({
-  imports: [ConfigModule.forFeature(queueConfig), MailModule],
+  imports: [
+    ConfigModule.forFeature(queueConfig),
+    MailModule,
+    MaintenanceModule,
+  ],
   providers: [
     MailProcessor,
+    RetentionProcessor,
     ProcessorRouter,
     RedisClientService,
 

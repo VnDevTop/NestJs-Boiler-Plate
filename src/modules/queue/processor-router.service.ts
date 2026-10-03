@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 
 import {
+  RetentionProcessor,
+  type RetentionJobPayload,
+} from '../maintenance/processors/retention.processor.js';
+import {
   MailProcessor,
   type MailJobPayload,
 } from './processors/mail.processor.js';
@@ -21,16 +25,23 @@ import type { Job, JobResult } from './queue.interface.js';
 export class ProcessorRouter {
   private readonly logger = new Logger(ProcessorRouter.name);
 
-  constructor(private readonly mailProcessor: MailProcessor) {}
+  constructor(
+    private readonly mailProcessor: MailProcessor,
+    private readonly retentionProcessor: RetentionProcessor,
+  ) {}
 
   /** True when some processor claims this name. */
   handles(name: string): boolean {
-    return MailProcessor.handles(name);
+    return MailProcessor.handles(name) || RetentionProcessor.handles(name);
   }
 
   async process(job: Job): Promise<JobResult> {
     if (MailProcessor.handles(job.name)) {
       return this.mailProcessor.process(job as Job<MailJobPayload>);
+    }
+
+    if (RetentionProcessor.handles(job.name)) {
+      return this.retentionProcessor.process(job as Job<RetentionJobPayload>);
     }
 
     this.logger.error(`No processor claims the job "${job.name}"`);

@@ -2,6 +2,7 @@ import { MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
 import { APP_GUARD, HttpAdapterHost } from '@nestjs/core';
 import { ConditionalModule, ConfigModule } from '@nestjs/config';
 import { createObserveModule } from '@nestjs/observe';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
@@ -19,7 +20,12 @@ import {
   twoFactorConfig,
   validateEnvironment,
 } from './configs/index.js';
-import { AdminModule, AuthModule, UsersModule } from './modules/index.js';
+import {
+  AdminModule,
+  AuthModule,
+  MaintenanceSchedulerModule,
+  UsersModule,
+} from './modules/index.js';
 import {
   JwtAuthGuard,
   ManagerGuard,
@@ -69,11 +75,26 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     TypeOrmModule.forRootAsync(databaseConfig.asProvider()),
     ThrottlerModule.forRootAsync(throttlerConfig.asProvider()),
 
+    /**
+     * Scheduled work, registered once for the whole application.
+     *
+     * `forRoot` may only be called in one place, so this belongs at the root
+     * rather than inside whichever module happens to schedule something first.
+     * Keeping it here means the next cron is a provider in its own module and no
+     * change to this file at all.
+     */
+    ScheduleModule.forRoot(),
+
     CacheModule,
     HealthModule,
     UsersModule,
     AuthModule,
     AdminModule,
+
+    // Enqueues the nightly retention job. Imported here rather than inside
+    // AuthModule, which already pulls in the queue for mail: the scheduler has
+    // to sit above the queue in the import graph, and AuthModule does not.
+    MaintenanceSchedulerModule,
   ],
   controllers: [AppController],
   providers: [

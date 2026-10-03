@@ -14,7 +14,17 @@ import { registerAs } from '@nestjs/config';
  */
 
 export interface RetentionConfig {
-  /** Whether the scheduled job runs. The admin route stays available either way. */
+  /**
+   * Whether the scheduled job runs. On by default.
+   *
+   * Retention only ever removes rows that are already past their age, so an app
+   * that never configures it loses nothing it could still use, and a table that
+   * nobody prunes grows until something breaks. Defaulting to off would make every
+   * deployment a deployment that leaks, and the people least likely to read the
+   * docs are exactly the ones who would never turn it on. Set
+   * `RETENTION_ENABLED=false` to stop it; the admin route stays available either
+   * way.
+   */
   enabled: boolean;
   /**
    * Reports what would be deleted and deletes nothing. The first production run
@@ -57,7 +67,7 @@ export interface RetentionAges {
   auditLogs: number;
 }
 
-const DEFAULT_AGES: RetentionAges = {
+export const DEFAULT_AGES: RetentionAges = {
   softDeletedUsers: 30,
   emailVerificationTokens: 7,
   passwordResetTokens: 7,
@@ -75,7 +85,7 @@ const flag = (value: string | undefined, fallback = false): boolean =>
   value === undefined ? fallback : value === 'true';
 
 export const retentionConfig = registerAs('retention', (): RetentionConfig => ({
-  enabled: flag(process.env.RETENTION_ENABLED),
+  enabled: flag(process.env.RETENTION_ENABLED, true),
   dryRun: flag(process.env.RETENTION_DRY_RUN),
   // 03:17 rather than 03:00, so it does not land on the same minute as every
   // other scheduled job in the fleet.

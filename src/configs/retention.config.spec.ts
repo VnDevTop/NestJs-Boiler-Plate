@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { retentionConfig } from './retention.config.js';
 
@@ -32,8 +32,22 @@ afterEach(() => {
 });
 
 describe('retentionConfig', () => {
-  it('is off by default, so nothing is deleted until it is asked for', () => {
+  it('is on by default, because nobody reads the docs', () => {
+    // Deliberately reversed from the original default. Retention only removes
+    // rows already past their age, so an unconfigured deployment loses nothing it
+    // could still use, whereas an off-by-default setting makes every install one
+    // that grows forever and only the people who read the documentation ever turn
+    // it on.
+    expect(retentionConfig().enabled).toBe(true);
+  });
+
+  it('can still be switched off with one env var', () => {
+    // The default is not a decision to remove the switch.
+    vi.stubEnv('RETENTION_ENABLED', 'false');
+
     expect(retentionConfig().enabled).toBe(false);
+
+    vi.unstubAllEnvs();
   });
 
   it('is not a dry run by default, but the flag is one env var away', () => {

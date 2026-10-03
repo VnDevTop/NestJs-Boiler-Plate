@@ -302,7 +302,7 @@ feat: add background job queue with in-process fallback
 
 ## Phase 16: Data Retention and Cleanup
 
-Status: Pending
+Status: Done
 
 Goal:
 
@@ -311,20 +311,20 @@ without ever taking a lock that hurts production traffic.
 
 Tasks:
 
-- [ ] Create `src/modules/maintenance` with a `retention.service.ts`
-- [ ] Implement the policy below, every age configurable
-- [ ] Add a `maintenance.retention` cron at an off-peak hour, plus an
+- [x] Create `src/modules/maintenance` with a `retention.service.ts`
+- [x] Implement the policy below, every age configurable
+- [x] Add a `maintenance.retention` cron at an off-peak hour, plus an
       admin-triggered manual run
-- [ ] Delete in batches with `WHERE id IN (SELECT id ... LIMIT 5000)` and a
+- [x] Delete in batches with `WHERE id IN (SELECT id ... LIMIT 5000)` and a
       sleep between batches
-- [ ] Log a structured summary of rows deleted per target, and expose the last
+- [x] Log a structured summary of rows deleted per target, and expose the last
       run time and duration
-- [ ] Add `RETENTION_DRY_RUN` that reports what would be deleted and deletes
+- [x] Add `RETENTION_DRY_RUN` that reports what would be deleted and deletes
       nothing
-- [ ] Add a hard-coded minimum age guard, so a misconfigured value cannot
+- [x] Add a hard-coded minimum age guard, so a misconfigured value cannot
       delete fresh data
-- [ ] Add the `maintenance.log` entity, append-only, to record each run
-- [ ] Add an admin route to trigger a dry run and to read the history
+- [x] Add the `maintenance.log` entity, append-only, to record each run
+- [x] Add an admin route to trigger a dry run and to read the history
 
 Retention policy:
 
@@ -340,16 +340,82 @@ login attempt bookkeeping     delete rows older than N                7
 two-factor secrets            cascade with the user delete             -
 ```
 
+Decisions taken against the policy above:
+
+- `two_factor_secrets` is not a target of its own. Now that it has a cascading
+  foreign key, the user delete removes it.
+- `mail_logs`, `notification_logs`, login-attempt bookkeeping and `audit_logs`
+  stay out of the policy until their tables exist. A rule naming a missing table
+  would fail on every run. They are listed in `DEFERRED_TARGETS` so the gap is
+  reviewable rather than forgotten.
+- The `user_devices` rule does discard the `ipAddress` and `userAgent` of past
+  logins along with the row. It returned 2 rows out of 40 on live data, which is
+  a cheap trade, and device rows are otherwise bounded by the user count.
+
+Commits:
+
+```text
+ce9f119  fix: cascade user devices and two-factor secrets on user delete
+2753621  feat: define the retention policy table
+62cb57b  feat: add batched retention deletes
+c525251  feat: add the maintenance run log
+25951e7  feat: add the maintenance job processor
+21b9f1c  feat: schedule the retention job
+2a621a0  feat: expose retention runs to an admin
+```
+
+What was built:
+
+- `retention.policy.ts` holds the policy as data: one entry per table, each with
+  its own predicate. Adding a target is adding an entry, not editing a switch.
+- `retention.service.ts` runs it in batches, one transaction per batch, with a
+  configurable pause between them. A target that fails is recorded and skipped
+  rather than ending the run.
+- `retention.processor.ts` runs it as a queue job, so the cron and the admin
+  route share one execution path.
+- `scheduler/retention.scheduler.ts` enqueues it nightly at `RETENTION_SCHEDULE`,
+  through `JOB_QUEUE`, so it fires whether the queue is BullMQ or in-process.
+- `admin/retention.controller.ts` exposes a synchronous dry run, a queued real
+  run, and the history.
+
+Decisions taken during the work:
+
+- `RETENTION_ENABLED` defaults to `true`. Retention only removes rows already past
+  their age, so an unconfigured deployment loses nothing it could still use, and
+  defaulting it off would make every install a deployment that grows forever.
+- The minimum age guard is enforced at the point of use, not only in environment
+  validation, because a config object assembled in a test must not be able to
+  delete today's rows.
+- A run that hit its timeout stops immediately rather than finishing the batch in
+  progress. A timeout here is nearly always a lost database connection, and
+  completing the batch would be another round trip against a connection that is
+  already gone.
+- A run that finished is a job success even when individual targets failed. A
+  renamed column answers a retry identically five seconds later. A timeout is the
+  opposite and stays retryable, because tables were left unclean.
+- `maintenance_logs` carries no index. A run is about 728 bytes stored, so a year
+  of daily runs is roughly 260 KB and fits in memory; an index would cost more than
+  it saves. Nothing prunes it, and the operator trims by hand.
+- The dry run counts exactly, with no cap. A rehearsal that under-reports is worse
+  than a slow one.
+
+Known limits:
+
+- The cron does not catch up a missed run. Restarting the app is fine, because the
+  schedule is re-registered on every boot and fires at the next occurrence, but a
+  window in which the process is not running at `RETENTION_SCHEDULE` means that
+  night is skipped entirely and nothing logs an error.
+- With the in-process dispatcher, a job that was enqueued but not yet processed is
+  lost on restart. With BullMQ it survives in redis, but the worker is created
+  lazily on first use, so it waits for the next enqueue to be picked up.
+- Several instances each run the schedule, so a night can produce several runs.
+  That is accepted: every run is idempotent, and rows are only removed once they
+  are already past their age.
+
 Expected outcome:
 
 - Table sizes flatten out under normal traffic instead of growing forever.
 - The first production run can be rehearsed safely with a dry run.
-
-Expected commit:
-
-```text
-feat: add scheduled data retention and cleanup jobs
-```
 
 ---
 
