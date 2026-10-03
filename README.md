@@ -2,9 +2,9 @@
   <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
 </p>
 <p align="center">
-  <a href="https://github.com/VnDevTop/NestJs-Boiler-Plate"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License" /></a>
-  <a href="https://github.com/VnDevTop/NestJs-Boiler-Plate"><img src="https://img.shields.io/badge/node-%3E%3D22-5FA04E" alt="Node 22+" /></a>
-  <a href="https://github.com/VnDevTop/NestJs-Boiler-Plate/actions"><img src="https://img.shields.io/badge/CI-passing-brightgreen" alt="CI" /></a>
+  <a href="https://github.com/VnDevTop/NestJs-Boilerplate"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License" /></a>
+  <a href="https://github.com/VnDevTop/NestJs-Boilerplate"><img src="https://img.shields.io/badge/node-%3E%3D22-5FA04E" alt="Node 22+" /></a>
+  <a href="https://github.com/VnDevTop/NestJs-Boilerplate/actions"><img src="https://img.shields.io/badge/CI-passing-brightgreen" alt="CI" /></a>
 </p>
 
 # NestJS Boilerplate
@@ -78,8 +78,8 @@ routers spell a wildcard differently.
 ### With Docker
 
 ```bash
-git clone https://github.com/VnDevTop/NestJs-Boiler-Plate.git
-cd NestJs-Boiler-Plate
+git clone https://github.com/VnDevTop/NestJs-Boilerplate.git
+cd NestJs-Boilerplate
 cp .env.example .env
 docker compose up --build
 ```
@@ -135,7 +135,7 @@ and nothing in `common` may know what your business does.
 
 Each folder documents itself, so an explanation sits where you are already
 looking. The `docs/` folder is also published as a site at
-<https://vndevtop.github.io/NestJs-BoilerPlate/>.
+<https://vndevtop.github.io/NestJs-Boilerplate/>.
 
 |                                                                |                                                           |
 | -------------------------------------------------------------- | --------------------------------------------------------- |
